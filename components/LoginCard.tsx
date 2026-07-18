@@ -26,20 +26,18 @@ export function LoginCard({ onLoggedIn }: { onLoggedIn: () => void }) {
   };
 
   return (
-    <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.03] p-8 shadow-2xl backdrop-blur">
+    <div className="w-full max-w-md rounded-3xl border border-[color:var(--border)] bg-[#9b03f2]/[0.05] p-8 shadow-2xl backdrop-blur">
       <div className="mb-6 text-center">
-        <video
-          src="/logo.mp4"
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="mx-auto mb-4 h-14 w-14 rounded-2xl object-cover"
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logo.png"
+          alt="Click"
+          className="mx-auto mb-4 h-16 w-16 object-contain"
         />
         <h1 className="text-2xl font-semibold tracking-tight">
-          Welcome to Nimbus Pro
+          Welcome to Click Pro
         </h1>
-        <p className="mt-2 text-sm text-neutral-400">
+        <p className="mt-2 text-sm text-[color:var(--muted)]">
           Sign in with your email. No wallet, no seed phrase — we handle the
           rest.
         </p>
@@ -54,7 +52,7 @@ export function LoginCard({ onLoggedIn }: { onLoggedIn: () => void }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@email.com"
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-[#aa00ff]/60 focus:outline-none"
+          className="w-full rounded-xl border border-[color:var(--border)] bg-[#9b03f2]/[0.04] px-4 py-3 text-sm text-[color:var(--text)] placeholder:text-[color:var(--muted)] focus:border-[#9b03f2]/60 focus:outline-none"
         />
         <Button type="submit" busy={busy} className="w-full">
           {busy ? "Check your inbox…" : "Continue with email"}
@@ -62,12 +60,12 @@ export function LoginCard({ onLoggedIn }: { onLoggedIn: () => void }) {
       </form>
 
       {error && (
-        <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-center text-sm text-red-300">
+        <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-center text-sm text-red-600">
           {error}
         </p>
       )}
 
-      <p className="mt-6 text-center text-xs text-neutral-500">
+      <p className="mt-6 text-center text-xs text-[color:var(--muted)]">
         Powered by a Magic embedded wallet · secured on-chain
       </p>
     </div>

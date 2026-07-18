@@ -42,7 +42,7 @@ import {
   type ITransaction,
   type EIP7702Authorization,
 } from "@particle-network/universal-account-sdk";
-import { TARGET_CHAIN, assertEnv } from "@/lib/config";
+import { useSubscriptionConfig } from "@/components/UniversalSubscriptionProvider";
 import {
   getOwnerAddress,
   isLoggedIn,
@@ -81,25 +81,44 @@ export interface UseUniversalUpgrade {
   ownerAddress: string | null;
   /** The derived Universal (smart-account) address. */
   smartAccountAddress: string | null;
+  /** The UA's Solana deposit address (for adding SOL / SPL tokens). */
+  solanaAddress: string | null;
   /** True once the EOA has 7702 code set on-chain (post first charge). */
   isDelegated: boolean;
   /** Re-read the unified balance from Particle; resolves with the fresh value. */
   refreshBalance: () => Promise<UniversalBalance>;
-  /** Build → authorize (7702) → sign → send a transfer. */
+  /** Build → authorize (7702) → sign → send a transfer. Returns the quoted fee. */
   sendUniversalTransaction: (
     input: TransferInput
-  ) => Promise<{ transactionId: string }>;
+  ) => Promise<{ transactionId: string; feeUsd: number }>;
   /**
    * Move value across chains inside the account (v2 "Convert"): rebalances
-   * primary assets into `amount` of `tokenType` on `chainId`. This is how
-   * cross-chain sourcing works on the v2 backend — convert first, then a
-   * same-chain transfer pays the receiver.
+   * primary assets into `amount` of `tokenType` on `chainId`. `usePrimaryTokens`
+   * restricts which source coin(s) fund it (pay-with); omit for auto/cheapest.
    */
   sendConvertTransaction: (input: {
     chainId: number;
     tokenType: SUPPORTED_TOKEN_TYPE;
     amount: string;
-  }) => Promise<{ transactionId: string }>;
+    usePrimaryTokens?: SUPPORTED_TOKEN_TYPE[];
+  }) => Promise<{ transactionId: string; feeUsd: number }>;
+  /**
+   * Read-only: build a Convert transaction and return what it WOULD do, without
+   * signing or sending. `arrivesUsd` is how much value actually lands on the
+   * destination chain after swap + bridge + fees; `feeUsd` is the quoted cost.
+   * Costs nothing (no signature, no broadcast).
+   */
+  estimateConvert: (input: {
+    chainId: number;
+    tokenType: SUPPORTED_TOKEN_TYPE;
+    amount: string;
+    usePrimaryTokens?: SUPPORTED_TOKEN_TYPE[];
+  }) => Promise<{ arrivesUsd: number; feeUsd: number }>;
+  /**
+   * Read-only: quote a same-chain transfer's fee. Throws if the settlement
+   * chain doesn't already hold enough (which is the signal to Convert first).
+   */
+  quoteTransfer: (input: TransferInput) => Promise<{ feeUsd: number }>;
   /**
    * Poll Particle until the transaction reaches a terminal status. Resolves on
    * FINISHED (7); rejects on failure statuses or timeout. `sendTransaction`
@@ -141,6 +160,45 @@ const FAILED_STATUSES = new Set([
 const FINISHED_STATUS = 7;
 
 /**
+ * Particle reports USD amounts as either hex-encoded 18-decimal fixed point
+ * ("0x…") or a plain decimal string. Parse both to a float. Used to read fees
+ * and "what actually arrives" out of a built transaction's quote.
+ */
+function parseUsd(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v === "string" && v.length > 0) {
+    if (v.startsWith("0x")) {
+      try {
+        return Number(BigInt(v)) / 1e18;
+      } catch {
+        return 0;
+      }
+    }
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+/** Total quoted fee (gas + service + LP) of a built transaction, in USD. */
+function txFeeUsd(tx: ITransaction): number {
+  let sum = 0;
+  for (const fq of tx.feeQuotes ?? []) {
+    sum += parseUsd(fq.fees?.totals?.feeTokenAmountInUSD);
+  }
+  return sum;
+}
+
+/** How much value would actually land on the destination chain, in USD. */
+function txArrivesUsd(tx: ITransaction): number {
+  let sum = 0;
+  for (const inc of tx.tokenChanges?.incr ?? []) {
+    sum += parseUsd(inc.amountInUSD);
+  }
+  return sum;
+}
+
+/**
  * Build the EIP-7702 authorization list for a freshly-built transaction.
  * Mirrors Particle's reference handler: iterate userOps, sign each pending
  * authorization once (cached by nonce), serialize (r,s,v) into a hex string.
@@ -179,6 +237,7 @@ async function buildAuthorizations(
 }
 
 export function useUniversalUpgrade(): UseUniversalUpgrade {
+  const config = useSubscriptionConfig();
   const uaRef = useRef<UniversalAccount | null>(null);
 
   const [isUniversal, setIsUniversal] = useState(false);
@@ -190,17 +249,23 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
   const [smartAccountAddress, setSmartAccountAddress] = useState<string | null>(
     null
   );
+  const [solanaAddress, setSolanaAddress] = useState<string | null>(null);
   const [isDelegated, setIsDelegated] = useState(false);
 
   /** Construct the Universal Account once, in EIP-7702 mode. */
   const ensureUA = useCallback(async (): Promise<UniversalAccount> => {
     if (uaRef.current) return uaRef.current;
-    const cfg = assertEnv();
+    const { particle } = config;
+    if (!particle.projectId || !particle.clientKey || !particle.appId) {
+      throw new Error(
+        "Missing Particle config. Provide it via <UniversalSubscriptionProvider> or NEXT_PUBLIC_PARTICLE_* env vars."
+      );
+    }
     const owner = await getOwnerAddress();
     const ua = new UniversalAccount({
-      projectId: cfg.particleProjectId,
-      projectClientKey: cfg.particleClientKey,
-      projectAppUuid: cfg.particleAppId,
+      projectId: particle.projectId,
+      projectClientKey: particle.clientKey,
+      projectAppUuid: particle.appId,
       smartAccountOptions: {
         useEIP7702: true,
         name: "UNIVERSAL",
@@ -214,18 +279,21 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
     uaRef.current = ua;
     setOwnerAddress(owner);
     return ua;
-  }, []);
+  }, [config]);
 
   /** Check whether the EOA has 7702 delegation code set on-chain. */
-  const updateDelegation = useCallback(async (owner: string) => {
-    try {
-      const provider = new JsonRpcProvider(TARGET_CHAIN.rpcUrl);
-      const code = await provider.getCode(owner);
-      setIsDelegated(code !== "0x" && code.length > 2);
-    } catch {
-      // Non-fatal: delegation status is informational for the UI.
-    }
-  }, []);
+  const updateDelegation = useCallback(
+    async (owner: string) => {
+      try {
+        const provider = new JsonRpcProvider(config.chain.rpcUrl);
+        const code = await provider.getCode(owner);
+        setIsDelegated(code !== "0x" && code.length > 2);
+      } catch {
+        // Non-fatal: delegation status is informational for the UI.
+      }
+    },
+    [config.chain.rpcUrl]
+  );
 
   const smartAcctRef = useRef<string | null>(null);
 
@@ -239,6 +307,9 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
         if (opts.smartAccountAddress) {
           smartAcctRef.current = opts.smartAccountAddress;
           setSmartAccountAddress(opts.smartAccountAddress);
+        }
+        if (opts.solanaSmartAccountAddress) {
+          setSolanaAddress(opts.solanaSmartAccountAddress);
         }
       } catch {
         // Non-fatal: address panel falls back to the owner EOA.
@@ -288,7 +359,8 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
     async (
       ua: UniversalAccount,
       transaction: ITransaction
-    ): Promise<{ transactionId: string }> => {
+    ): Promise<{ transactionId: string; feeUsd: number }> => {
+      const feeUsd = txFeeUsd(transaction);
       const authorizations = await buildAuthorizations(transaction);
       const signature = await signRootHash(transaction.rootHash);
       const result = await ua.sendTransaction(
@@ -298,13 +370,15 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
       );
       if (ownerAddress) await updateDelegation(ownerAddress);
       await refreshBalance();
-      return { transactionId: result?.transactionId ?? "" };
+      return { transactionId: result?.transactionId ?? "", feeUsd };
     },
     [ownerAddress, refreshBalance, updateDelegation]
   );
 
   const sendUniversalTransaction = useCallback(
-    async (input: TransferInput): Promise<{ transactionId: string }> => {
+    async (
+      input: TransferInput
+    ): Promise<{ transactionId: string; feeUsd: number }> => {
       setError(null);
       try {
         const ua = await ensureUA();
@@ -331,14 +405,20 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
       chainId: number;
       tokenType: SUPPORTED_TOKEN_TYPE;
       amount: string;
-    }): Promise<{ transactionId: string }> => {
+      usePrimaryTokens?: SUPPORTED_TOKEN_TYPE[];
+    }): Promise<{ transactionId: string; feeUsd: number }> => {
       setError(null);
       try {
         const ua = await ensureUA();
-        const transaction = await ua.createConvertTransaction({
-          chainId: input.chainId,
-          expectToken: { type: input.tokenType, amount: input.amount },
-        });
+        const transaction = await ua.createConvertTransaction(
+          {
+            chainId: input.chainId,
+            expectToken: { type: input.tokenType, amount: input.amount },
+          },
+          input.usePrimaryTokens
+            ? { usePrimaryTokens: input.usePrimaryTokens }
+            : undefined
+        );
         return await signAndSend(ua, transaction);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -347,6 +427,41 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
       }
     },
     [ensureUA, signAndSend]
+  );
+
+  const estimateConvert = useCallback(
+    async (input: {
+      chainId: number;
+      tokenType: SUPPORTED_TOKEN_TYPE;
+      amount: string;
+      usePrimaryTokens?: SUPPORTED_TOKEN_TYPE[];
+    }): Promise<{ arrivesUsd: number; feeUsd: number }> => {
+      const ua = await ensureUA();
+      const tx = await ua.createConvertTransaction(
+        {
+          chainId: input.chainId,
+          expectToken: { type: input.tokenType, amount: input.amount },
+        },
+        input.usePrimaryTokens
+          ? { usePrimaryTokens: input.usePrimaryTokens }
+          : undefined
+      );
+      return { arrivesUsd: txArrivesUsd(tx), feeUsd: txFeeUsd(tx) };
+    },
+    [ensureUA]
+  );
+
+  const quoteTransfer = useCallback(
+    async (input: TransferInput): Promise<{ feeUsd: number }> => {
+      const ua = await ensureUA();
+      const tx = await ua.createTransferTransaction({
+        token: { chainId: input.token.chainId, address: input.token.address },
+        amount: input.amount,
+        receiver: input.receiver,
+      });
+      return { feeUsd: txFeeUsd(tx) };
+    },
+    [ensureUA]
   );
 
   const waitForSettlement = useCallback(
@@ -403,10 +518,13 @@ export function useUniversalUpgrade(): UseUniversalUpgrade {
     error,
     ownerAddress,
     smartAccountAddress,
+    solanaAddress,
     isDelegated,
     refreshBalance,
     sendUniversalTransaction,
     sendConvertTransaction,
+    estimateConvert,
+    quoteTransfer,
     waitForSettlement,
     getHistory,
   };

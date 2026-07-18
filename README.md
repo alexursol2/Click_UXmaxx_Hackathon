@@ -1,146 +1,279 @@
-# Nimbus — chain-abstracted subscriptions
+# Click — chain-abstracted subscriptions
 
-Email login → a Particle **Universal Account** (via EIP-7702) → a recurring subscription paid from **one unified balance**, sourced from the user's assets on _any_ chain. No seed phrase, no network switching, no signing popups.
+**Log in with an email. Pay a recurring subscription from one balance — even if
+your money is on Solana and the merchant is on Arbitrum.** No seed phrase, no
+network switching, no bridging, no signing popups.
 
-**Proven on mainnet:** ETH held on Base paid a merchant in USDC on Arbitrum — converted, bridged, and settled automatically, with every signature headless.
+Built for the **UXmaxx hackathon — Universal Accounts track** on
+**Magic** (embedded email wallet) + **Particle Network Universal Accounts**
+(EIP-7702) + **Arbitrum / Solana**.
+
+> **Proven on mainnet — not a mock.**
+> - EVM: ETH held on **Base** paid a merchant in **USDC on Arbitrum** (converted, bridged, settled).
+> - Solana: **SOL on Solana** paid a merchant in **USDC on Arbitrum** — one click, signed with a single EVM signature, no Solana signer. _(convert `101→Arbitrum` + transfer, both status 7, on 2026-07-18.)_
 
 This repo is two things at once:
 
-1. A **demo storefront** (a fake SaaS, "Nimbus Pro") you can run in two minutes.
-2. A **starter template** — the interesting part is one clean, reusable hook.
+1. A **demo storefront** ("Click Pro") you can run in two minutes.
+2. A **reusable library** — wrap a provider, call two hooks, done.
 
 ---
 
-## The 3-line integration
+## Table of contents
+
+- [The library in 2 steps](#the-library-in-2-steps)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [The charge flow](#the-charge-flow)
+- [Solana → Arbitrum](#solana--arbitrum)
+- [Why this is technically hard](#why-this-is-technically-hard)
+- [Configuration](#configuration)
+- [Project structure](#project-structure)
+- [Public API](#public-api)
+- [Deploy](#deploy)
+- [Roadmap](#roadmap)
+
+---
+
+## The library in 2 steps
+
+Everything a host app configures lives in one object, injected via a provider.
+The demo works with zero props (env defaults); any other business drops the
+provider in and it's their subscription — no code edits.
 
 ```tsx
-import { useUniversalUpgrade } from "@/hooks/useUniversalUpgrade";
+// 1. Wrap once
+import { UniversalSubscriptionProvider } from "@/components/UniversalSubscriptionProvider";
 
-const { upgrade, isUniversal, universalBalance } = useUniversalUpgrade();
-// universalBalance.totalUsd → one spendable number across every chain
-// upgrade()                 → turn the email EOA into a Universal Account
+<UniversalSubscriptionProvider
+  config={{
+    merchant: "0xYourReceivingAddress",
+    // magicKey, particle keys, price, chain, settlement token… all optional
+  }}
+>
+  <App />
+</UniversalSubscriptionProvider>;
 ```
 
-That's the whole product surface for chain abstraction. Everything else is UI.
+```tsx
+// 2. Read the hooks anywhere
+import { useUniversalUpgrade } from "@/hooks/useUniversalUpgrade";
+import { useSubscription } from "@/hooks/useSubscription";
+
+const { upgrade, isUniversal, universalBalance } = useUniversalUpgrade();
+const { chargeSubscription, cancelSubscription, subscriptionActive } =
+  useSubscription();
+```
+
+The reusable core is `components/UniversalSubscriptionProvider` + `hooks/*` +
+`lib/magic.ts`. The public surface is re-exported from [`index.ts`](./index.ts).
 
 ---
 
-## Quickstart
+## Quick start
 
 ```bash
-git clone <this-repo> nimbus && cd nimbus
+git clone https://github.com/alexursol2/Click_UXmaxx_Hackathon click && cd click
 npm install
-cp .env.example .env.local     # then paste your keys (below)
+cp .env.example .env.local     # paste your keys (below)
 npm run dev                     # → http://localhost:3000
 ```
 
-### The keys you need
+### Keys you need
 
-All keys are **publishable, client-side** keys (safe in the browser bundle) — hence the `NEXT_PUBLIC_` prefix.
+All are **publishable, client-side** keys (safe in the browser bundle) — hence
+the `NEXT_PUBLIC_` prefix. **Never** put secret/server keys here.
 
 | Variable | Where to get it |
 | --- | --- |
 | `NEXT_PUBLIC_MAGIC_KEY` | [Magic dashboard](https://dashboard.magic.link) (`pk_live_…`) |
 | `NEXT_PUBLIC_PARTICLE_PROJECT_ID` / `_CLIENT_KEY` / `_APP_ID` | [Particle dashboard](https://dashboard.particle.network) |
-| `NEXT_PUBLIC_MERCHANT_ADDRESS` | where payments land — use an address you control |
-
-Optional knobs: price (`…_PRICE_USD`, default $5), settlement token (`…_SUBSCRIPTION_TOKEN=eth` for native ETH + `…_PRICE_ETH`), settlement chain (`…_SUBSCRIPTION_CHAIN_ID`), and **demo billing** (`…_BILLING_INTERVAL_SECONDS=10`, `…_BILLING_MAX_CYCLES=3` → after the first charge, the app auto-charges every 10 s, three total — recurring you can watch live).
+| `NEXT_PUBLIC_MERCHANT_ADDRESS` | where payments land — an address you control |
 
 ---
 
 ## How it works
 
 ```
- ┌──────────────┐   email OTP    ┌──────────────────┐    EIP-7702    ┌────────────────────┐
- │ Magic wallet  │ ─────────────▶ │ useUniversal-     │ ─────────────▶ │ Particle Universal │
- │ (EOA, no seed │  headless sign │ Upgrade()         │   type-4 tx    │ Account: unified   │
- │ phrase)       │                │ = the product     │                │ cross-chain balance │
- └──────────────┘                └──────────────────┘                └────────────────────┘
+ ┌──────────────┐   email OTP    ┌──────────────────┐    EIP-7702    ┌─────────────────────┐
+ │ Magic wallet  │ ─────────────▶ │ useUniversal-     │ ─────────────▶ │ Particle Universal   │
+ │ (EOA, no seed │  headless sign │ Upgrade()         │   type-4 tx    │ Account: one unified │
+ │ phrase)       │                │ = the product     │                │ cross-chain balance  │
+ └──────────────┘                └──────────────────┘                └─────────────────────┘
 ```
 
-- **Magic** turns an email into an embedded wallet. Signing is headless — no
-  confirmation popups — which is what makes recurring charges feel like a
-  normal SaaS, and its `sign7702Authorization()` signs the EIP-7702 tuple.
-- **Particle Universal Accounts (SDK v2)** abstracts balances across chains
-  into one number and one place to spend from.
+- **Magic** turns an email into a non-custodial embedded wallet. Signing is
+  **headless** (no popups) — which is what makes recurring billing feel like a
+  normal SaaS. It also signs the EIP-7702 authorization (`sign7702Authorization`).
+- **Particle Universal Accounts (SDK v2)** abstracts balances across chains into
+  one number and one place to spend from — EVM chains **and Solana**.
 - **EIP-7702** upgrades the plain email EOA into that Universal Account. The
   authorization rides along with the first transaction — no separate setup tx.
 
-### The charge flow (v2 backend)
+Supported source tokens: **ETH, USDC, USDT, BNB, SOL**. Supported chains:
+**Ethereum, Base, Arbitrum, BNB Chain, XLayer, Solana**.
 
-On Particle's v2 backend, a transfer spends tokens already on the settlement
-chain; cross-chain sourcing is a **Convert** (`createConvertTransaction`) that
-rebalances your assets first. `chargeSubscription()` handles it end to end:
+---
+
+## The charge flow
+
+On Particle's v2 backend a **transfer** only spends tokens already on the
+settlement chain; cross-chain sourcing is a **Convert** that rebalances your
+assets first. `chargeSubscription()` handles it end to end:
 
 ```
 transfer ── funds already on settlement chain? ──▶ settle ✓
-   │ no
+   │ no ("Insufficient primary token balance")
    ▼
 convert (any chain → settlement chain) ──▶ wait for on-chain settlement
-   ▼
-transfer ──▶ wait for on-chain settlement ──▶ "Pro active"
+   ▼                                              │ transfer fails here?
+transfer ──▶ wait for on-chain settlement         ▼
+   ▼                                        PARTIAL: funds moved, unpaid.
+"Pro active"                                Retry RESUMES at transfer —
+                                            never converts (or pays) twice.
 ```
 
-Two hard-won lessons are baked in:
+Two invariants are baked in:
 
-1. **`sendTransaction` resolving ≠ money moved.** Cross-chain operations
-   settle asynchronously; `waitForSettlement()` polls until terminal status
-   (7 = FINISHED) and the UI never claims success before the chain does.
+1. **`sendTransaction` resolving ≠ money moved.** Cross-chain settlement is
+   asynchronous; `waitForSettlement()` polls until terminal status (7 = FINISHED)
+   and the UI never claims success before the chain does.
 2. **Subscription state lives on-chain.** On load, the app counts settled
-   transfers to the merchant in the account's history — "Pro" survives
+   transfers to the merchant (matched by amount + recency) — "Pro" survives
    reloads with no backend, because the chain is the database.
 
-Target chain: **Arbitrum One** (settlement); user funds can sit anywhere the
-Universal Account supports (Ethereum, Base, BNB, Arbitrum, XLayer, Solana).
+---
+
+## Solana → Arbitrum
+
+The interesting discovery: **paying from Solana needs no separate Solana signer.**
+Particle's own examples (`transfer-solana.ts`, `convert-solana.ts`) sign every
+Solana action with **only the EVM owner's root-hash signature**
+(`sendTransaction(tx, wallet.signMessage(getBytes(tx.rootHash)))`). The UA's
+Solana smart account is authorised by the EVM owner — the exact path this app
+already has.
+
+So Solana sourcing works through the existing code. The only UI addition was
+surfacing the **Solana deposit address** (`getSmartAccountOptions().solanaSmartAccountAddress`)
+in "how to add funds?". A charge whose funds sit on Solana sources them via the
+Convert path, root-hash signed. **Verified on mainnet** (SOL on Solana →
+USDC to a merchant on Arbitrum, convert fee ≈ $0.12).
+
+---
+
+## Why this is technically hard
+
+Chain abstraction looks like one number and one button. What makes it real is
+everything underneath. This project paid for these lessons on mainnet:
+
+- **Settlement is not submission** — poll to a terminal status before trusting success.
+- **Transfers only spend the settlement chain** — "pay $X on Arbitrum from ETH on Base"
+  is Convert → wait → transfer → wait, not one call.
+- **A cross-chain charge can half-complete** — Convert settles, transfer fails, money's
+  moved and merchant unpaid. The app detects it and its retry **resumes at the transfer**,
+  never converting/paying twice.
+- **Error codes are ambiguous** — Particle reuses `-32653` for both "insufficient on the
+  settlement chain" (needs a Convert) and a transient busy bundler. The **message** has to
+  win over the code, or a Solana-only balance can never pay. (`lib/utils.ts` → `classifyError`.)
+- **Buffers are a guess; quotes are truth** — the Convert is sized against a live quote so
+  the amount that actually arrives covers price + settlement-chain gas.
+- **7702 delegation is per-chain** — delegating on Base doesn't delegate on Arbitrum; each
+  chain the account touches carries its own authorization on the first tx.
+- **Recurring on mainnet burns real money** — a low-balance guard pauses billing before it
+  can drain the wallet; the cross-chain fee is previewed before a charge.
+
+---
+
+## Configuration
+
+Everything is env-driven (and injectable via the provider `config` prop):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUBSCRIPTION_PRICE_USD` | `5` | Price when settling in USDC |
+| `NEXT_PUBLIC_SUBSCRIPTION_TOKEN` | `usdc` | Settlement token: `usdc` \| `eth` \| `sol` |
+| `NEXT_PUBLIC_SUBSCRIPTION_PRICE_ETH` / `_SOL` | `0.001` / `0.01` | Price when settling in ETH / SOL |
+| `NEXT_PUBLIC_SUBSCRIPTION_CHAIN_ID` | `42161` | Settlement chain (EVM); `sol` forces Solana (101) |
+| `NEXT_PUBLIC_MERCHANT_ADDRESS` / `_SOL` | — | Merchant (EVM / Solana) |
+| `NEXT_PUBLIC_BILLING_INTERVAL_SECONDS` | `0` | >0 compresses billing for a live demo |
+| `NEXT_PUBLIC_BILLING_MAX_CYCLES` | `12` | Cap on auto-charges (a year of monthly) |
+| `NEXT_PUBLIC_CONVERT_BUFFER_USD` / `_ETH` | `0.4` / `0.0002` | Cross-chain headroom floor |
+| `NEXT_PUBLIC_CONVERT_GAS_FLOOR_USD` | `0.05` | Min settlement-chain gas to over-convert for |
+| `NEXT_PUBLIC_LOW_BALANCE_STOP_USD` | `0.5` | Pause auto-billing below `price + this` |
+
+**Subscription model (demo default):** $0.10 / month, renews monthly, up to 12
+cycles (a year), **cancel anytime**. Cancel turns off auto-renew and keeps
+access until the period ends (persisted per wallet).
 
 ---
 
 ## Project structure
 
 ```
-app/
-  layout.tsx · page.tsx        # auth gate: login ⇄ dashboard
-hooks/
-  useUniversalUpgrade.ts       # ★ the reusable product: upgrade, unified
-                               #   balance, transfer/convert, settlement
-  useSubscription.ts           # charge flow, on-chain Pro state, demo billing
-lib/
-  magic.ts                     # email login, ethers signer, 7702 adapter
-  config.ts                    # chain, price, tokens, env validation
-  utils.ts                     # formatting + friendly error mapping
+app/                            # Next.js App Router
+  layout.tsx · page.tsx         #   fonts, auth gate (login ⇄ dashboard), bg clouds
+index.ts                        # ★ public library API (barrel)
 components/
-  LoginCard · ProDashboard · UniversalBalanceCard · SubscriptionCard
-  ChargeProgress · BillingHistory · Button
-scripts/
-  check-account.mjs            # balances + delegation + unified balance
-  tx-list.mjs                  # Particle history with statuses
-  probe-*.mjs · fees.mjs       # read-only route/fee quoting (no keys, no spend)
+  UniversalSubscriptionProvider #   config injection (env defaults or props)
+  UniversalBalanceCard          #   unified balance, EVM+Solana addresses, holdings
+  SubscriptionBar               #   bottom bar: benefits (hover/tap), GET PRO, cancel
+  ChargeProgress                #   live cross-chain journey stepper
+  BillingHistory                #   on-chain receipts drawer + total fees
+  LoginCard · Button · icons · TokenIcon · PayWithSelector
+hooks/
+  useUniversalUpgrade.ts        # ★ the product: upgrade, unified balance,
+                                #   transfer/convert/quote, settlement polling, history
+  useSubscription.ts            #   charge flow, on-chain Pro state, pay-with, demo billing
+  useHoverable.ts               #   hover on desktop, tap on mobile
+lib/
+  magic.ts                      #   email login, ethers signer, 7702 signature adapter
+  config.ts                     #   env → typed config (chain, price, tokens, guards)
+  subscriptionConfig.ts         #   the injectable config type + configFromEnv()
+  feeLedger.ts                  #   local fee record (Particle history has no fees)
+  chains.ts · utils.ts          #   chain names, formatting, classifyError
+scripts/                        #   read-only diagnostics (no keys, no spend):
+  check-account.mjs · tx-list.mjs · probe-*.mjs · fees.mjs
 ```
 
-The hook has **no dependency on the UI or the subscription** — lift
-`hooks/useUniversalUpgrade.ts` + `lib/magic.ts` into any Next app and you have
-chain abstraction.
-
-The `scripts/` diagnostics deserve a mention: quotes are free (nothing is
-signed), so you can probe routing, fees, and settlement **with only a public
+The `scripts/` diagnostics are worth a mention: quotes are free (nothing is
+signed), so you can probe routing, fees, and balances **with only a public
 address** — `node --env-file=.env.local scripts/check-account.mjs 0xYourAddress`.
 
 ---
 
-## Deploy to Vercel
+## Public API
+
+Re-exported from [`index.ts`](./index.ts):
+
+- `UniversalSubscriptionProvider`, `useSubscriptionConfig`, `configFromEnv`, `UniversalSubscriptionConfig`
+- `useUniversalUpgrade` + types (`UniversalBalance`, `TransferInput`, `HistoryEntry`)
+- `useSubscription` + types (`PayWith`, `AvailableToken`, `ChargeStage`)
+- `classifyError`, `friendlyError`, `ClassifiedError`
+
+---
+
+## Deploy
 
 Stock Next.js App Router app — Vercel auto-detects it.
 
-1. Push to GitHub and import the repo in Vercel.
-2. Add your `NEXT_PUBLIC_*` variables in **Project → Settings → Environment Variables**.
+1. Push to GitHub, import the repo in Vercel.
+2. Add your `NEXT_PUBLIC_*` variables in **Settings → Environment Variables**.
 3. Deploy. No build config required.
+
+---
+
+## Roadmap
+
+- **Session keys** so recurring billing runs merchant-initiated (no open session) with an on-chain spend policy.
+- **Card on-ramp** via `@particle-network/universal-deposit` (deposit into the UA from any chain + Stripe/Coinbase).
+- **More settlement chains**, and Solana-settled merchants.
 
 ---
 
 ## Notes
 
-- Mainnet flows are meant to be tested with your own keys and a funded wallet;
-  the code never executes transactions on its own.
-- Requires `@particle-network/universal-account-sdk` **v2+** — v1 was
-  deprecated and its backend sunset in June 2026.
-- The hook is intentionally **not** published to npm — it's a copy-in starter.
+- Requires `@particle-network/universal-account-sdk` **v2+** (v1's backend was sunset June 2026).
+- Mainnet flows are meant to be tested with your own keys + funds; the code never executes transactions on its own.
+- Stack: Next.js 15.5, React 19, TypeScript 5, Tailwind v4, ethers v6, magic-sdk 33, Quicksand font.
+
+🤖 Built with [Claude Code](https://claude.com/claude-code)

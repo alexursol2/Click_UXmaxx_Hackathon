@@ -9,14 +9,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#aa00ff]/70";
+  "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#9b03f2]/70";
 
 const variants: Record<Variant, string> = {
-  primary:
-    "bg-gradient-to-r from-[#aa00ff] to-[#6600cc] text-white shadow-lg shadow-[#aa00ff]/25 hover:from-[#b833ff] hover:to-[#7a14e6] active:scale-[0.99]",
+  primary: "bg-[#9b03f2] text-white hover:bg-[#7209a5] active:scale-[0.99]",
   ghost:
-    "border border-white/10 bg-white/5 text-neutral-200 hover:bg-white/10",
-  subtle: "text-neutral-400 hover:text-neutral-200",
+    "border border-[color:var(--border)] bg-[#9b03f2]/[0.05] text-[color:var(--text)] hover:bg-[#9b03f2]/[0.1]",
+  subtle: "text-[color:var(--muted)] hover:text-[color:var(--text)]",
 };
 
 export function Button({

@@ -35,18 +35,43 @@ export interface ParticleAuthResult {
 let magicSingleton: Magic | null = null;
 let signerCache: JsonRpcSigner | null = null;
 
-/** Lazily construct the Magic client, pinned to the target chain. */
+/** Runtime Magic config, set by the Provider. Falls back to env when unset. */
+interface MagicRuntimeConfig {
+  magicKey: string;
+  chainId: number;
+  rpcUrl: string;
+}
+let runtimeConfig: MagicRuntimeConfig | null = null;
+
+/**
+ * Inject the Magic-relevant config (called once by the Provider). If the key
+ * changes, the singleton + signer are reset so the next call rebuilds them.
+ */
+export function configureMagic(cfg: MagicRuntimeConfig) {
+  if (!cfg.magicKey) return;
+  if (magicSingleton && runtimeConfig?.magicKey !== cfg.magicKey) {
+    magicSingleton = null;
+    signerCache = null;
+  }
+  runtimeConfig = cfg;
+}
+
+function resolveConfig(): MagicRuntimeConfig {
+  if (runtimeConfig?.magicKey) return runtimeConfig;
+  // Fallback for any call before the Provider mounts (identical to the default).
+  const { magicKey } = assertEnv();
+  return { magicKey, chainId: TARGET_CHAIN.id, rpcUrl: TARGET_CHAIN.rpcUrl };
+}
+
+/** Lazily construct the Magic client, pinned to the configured chain. */
 export function getMagic(): Magic {
   if (typeof window === "undefined") {
     throw new Error("Magic is browser-only and cannot be used during SSR.");
   }
   if (!magicSingleton) {
-    const { magicKey } = assertEnv();
-    magicSingleton = new Magic(magicKey, {
-      network: {
-        rpcUrl: TARGET_CHAIN.rpcUrl,
-        chainId: TARGET_CHAIN.id,
-      },
+    const cfg = resolveConfig();
+    magicSingleton = new Magic(cfg.magicKey, {
+      network: { rpcUrl: cfg.rpcUrl, chainId: cfg.chainId },
     });
   }
   return magicSingleton;

@@ -1,19 +1,86 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0f;
-  --foreground: #ededed;
+  /* White theme — solid white background, purple text. */
+  --bg: #ffffff;
+  --panel: #f6ecfb; /* light lavender panel on white */
+  --text: #111111; /* near-black — primary text */
+  --muted: #6b7280; /* neutral grey — secondary text */
+  --accent: #7209a5; /* deep purple — emphasis (address, amounts) */
+  --purple: #9b03f2;
+  --purple-deep: #7209a5;
+  --pink: #ef6ffd;
+  --border: rgba(114, 9, 165, 0.16);
 }
 
 html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--text);
   -webkit-font-smoothing: antialiased;
+  font-family: var(--font-rounded), ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN",
+    "Quicksand", system-ui, sans-serif;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Slide-in drawer for the billing history side panel. */
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Travelling dot on the cross-chain charge progress path. */
+@keyframes slide {
+  0% {
+    left: 0;
+  }
+  100% {
+    left: calc(100% - 0.625rem);
+  }
+}
+
+/* Slow-drifting background "clouds". */
+@keyframes drift-a {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6vw, 4vh) scale(1.12);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes drift-b {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-5vw, 5vh) scale(1.08);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes drift-c {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(4vw, -4vh) scale(1.15);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
 }

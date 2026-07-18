@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { useSubscription } from "@/hooks/useSubscription";
 import { logout as magicLogout } from "@/lib/magic";
 import { friendlyError } from "@/lib/utils";
+import { dominantSourceChain } from "@/lib/chains";
+import { useSubscriptionConfig } from "./UniversalSubscriptionProvider";
 import { UniversalBalanceCard } from "./UniversalBalanceCard";
-import { SubscriptionCard } from "./SubscriptionCard";
+import { SubscriptionBar } from "./SubscriptionBar";
 import { BillingHistory } from "./BillingHistory";
-import { Button } from "./Button";
+import { LogoutIcon } from "./icons";
 
 export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
   const sub = useSubscription();
@@ -47,46 +49,54 @@ export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
     onLoggedOut();
   };
 
+  // The chain the money most visibly travels from — makes the charge visual
+  // concrete ("Base → Arbitrum") instead of a vague cross-chain hop.
+  const { settlement } = useSubscriptionConfig();
+  const sourceChain = dominantSourceChain(
+    sub.universalBalance,
+    settlement.chainId
+  );
+
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-10">
-      <header className="mb-10 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <video
-            src="/logo.mp4"
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="h-9 w-9 rounded-xl object-cover"
+    <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-16">
+      <header className="mb-10 flex items-center justify-between sm:mb-14">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="Click"
+            className="h-10 w-10 object-contain"
           />
-          <span className="text-lg font-semibold tracking-tight">Nimbus</span>
+          <span className="text-4xl font-bold tracking-tight text-[color:var(--text)]">
+            Click
+          </span>
         </div>
-        <div className="flex items-center gap-3 text-sm text-neutral-400">
-          <span className="hidden sm:inline">Signed in</span>
-          <Button variant="subtle" onClick={doLogout} className="px-3 py-2">
-            Log out
-          </Button>
+        <div className="flex items-center gap-3">
+          <BillingHistory
+            getHistory={sub.getHistory}
+            refreshKey={sub.chargeCount}
+          />
+          <button
+            onClick={doLogout}
+            aria-label="Log out"
+            title="Log out"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[color:var(--border)] text-[color:var(--muted)] transition-colors hover:text-[color:var(--text)]"
+          >
+            <LogoutIcon />
+          </button>
         </div>
       </header>
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Your Pro dashboard
-        </h1>
-        <p className="mt-1 text-sm text-neutral-400">
-          {sub.subscriptionActive
-            ? "You're on Pro. Everything below is unlocked."
-            : "Upgrade to unlock Pro — paid instantly from your unified balance."}
-        </p>
-      </div>
+      <UniversalBalanceCard
+        balance={sub.universalBalance}
+        loading={sub.loading}
+        address={sub.ownerAddress}
+        solanaAddress={sub.solanaAddress}
+        onRefresh={sub.refreshBalance}
+      />
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <UniversalBalanceCard
-          balance={sub.universalBalance}
-          loading={sub.loading}
-          address={sub.ownerAddress}
-        />
-        <SubscriptionCard
+      <div className="mt-6">
+        <SubscriptionBar
           active={sub.subscriptionActive}
           upgrading={sub.loading}
           charging={sub.charging}
@@ -94,15 +104,22 @@ export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
           chargeCount={sub.chargeCount}
           nextChargeAt={sub.nextChargeAt}
           error={uiError ?? sub.autoErrorMessage}
+          partialPayment={sub.partialPayment}
+          lowBalancePaused={sub.lowBalancePaused}
+          crossChain={sub.crossChainLastCharge || !!sourceChain}
+          sourceChainName={sourceChain?.name ?? null}
+          cancelled={sub.cancelled}
+          paidUntil={sub.paidUntil}
+          payWith={sub.payWith}
+          availableTokens={sub.availableTokens}
+          estimatedFee={sub.estimatedFee}
+          estimatedCrossChain={sub.estimatedCrossChain}
+          estimating={sub.estimating}
+          onPayWith={sub.setPayWith}
           onUpgrade={onUpgrade}
           onChargeAgain={onChargeAgain}
-        />
-      </div>
-
-      <div className="mt-6">
-        <BillingHistory
-          getHistory={sub.getHistory}
-          refreshKey={sub.chargeCount}
+          onCancel={sub.cancelSubscription}
+          onResume={sub.resumeSubscription}
         />
       </div>
     </div>

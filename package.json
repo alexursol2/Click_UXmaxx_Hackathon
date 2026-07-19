@@ -1,29 +1,78 @@
 {
-  "name": "uxmaxx-universal-subscriptions",
+  "name": "clickpay",
   "version": "0.1.0",
-  "private": true,
-  "description": "Email login → EIP-7702 Universal Account → cross-chain $5/mo subscription. UXmaxx hackathon (Universal Accounts track).",
+  "description": "Chain-abstracted crypto payments for any React app: email login → EIP-7702 Universal Account → one-click pay from a unified cross-chain balance. Drop-in <ClickProvider>, <ClickPayButton>, <ClickAccountButton> + hooks.",
+  "keywords": [
+    "crypto",
+    "payments",
+    "web3",
+    "eip-7702",
+    "account-abstraction",
+    "universal-account",
+    "particle-network",
+    "magic",
+    "embedded-wallet",
+    "cross-chain",
+    "react",
+    "checkout",
+    "stablecoin"
+  ],
+  "license": "MIT",
+  "author": "Oleksandr Ursol",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexursol2/Click_UXmaxx_Hackathon.git"
+  },
+  "homepage": "https://github.com/alexursol2/Click_UXmaxx_Hackathon#readme",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:lib": "tsup && tailwindcss -i ./lib.css -o ./dist/styles.css --minify",
+    "prepublishOnly": "npm run build:lib"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
   },
   "dependencies": {
     "@particle-network/universal-account-sdk": "^2.0.3",
     "ethers": "^6.17.0",
-    "magic-sdk": "^33.9.0",
-    "next": "^15.5.20",
-    "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "magic-sdk": "^33.9.0"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.0.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "next": "^15.5.20",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
     "tailwindcss": "^4.0.0",
+    "tsup": "^8.0.0",
     "typescript": "^5.7.0"
   }
 }

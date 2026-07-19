@@ -1,0 +1,29 @@
+/*
+ * Shipped stylesheet for the `clickpay` package: `import "clickpay/styles.css"`.
+ *
+ * Ships the Tailwind UTILITIES actually used by the components plus the design
+ * tokens (CSS variables) they reference. Tailwind's global reset (preflight) is
+ * deliberately NOT included, so importing this can't clobber a host app's own
+ * base styles.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Only scan the library's own components/hooks (not the demo app). */
+@source "./components/**/*.{ts,tsx}";
+@source "./hooks/**/*.{ts,tsx}";
+
+/* Design tokens the components read via var(--…). A host can override any of
+   these to re-theme the widgets; sensible defaults ship here. */
+:root {
+  --bg: #ffffff;
+  --panel: #f6ecfb;
+  --text: #111827;
+  --muted: #6b7280;
+  --accent: #7209a5;
+  --purple: #9b03f2;
+  --purple-deep: #7209a5;
+  --pink: #ef6ffd;
+  --border: rgba(114, 9, 165, 0.16);
+  --font-rounded: "Quicksand", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}

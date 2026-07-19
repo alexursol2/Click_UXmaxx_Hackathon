@@ -47,8 +47,13 @@ The whole account — email login, unified cross-chain balance, add-funds, pick
 which coin pays, and one-click checkout — is **three imports**. No wallet UI to
 build:
 
+```bash
+npm install clickpay
+```
+
 ```tsx
-import { ClickProvider, ClickAccountButton, ClickPayButton } from "./index";
+import { ClickProvider, ClickAccountButton, ClickPayButton } from "clickpay";
+import "clickpay/styles.css"; // ships the widget styles + design tokens
 
 export default function App() {
   return (
@@ -75,7 +80,7 @@ a button anywhere just works:
 Prefer your own UI? Read the hook — it's the account, in one object:
 
 ```tsx
-import { useClickAccount } from "./index";
+import { useClickAccount } from "clickpay";
 
 const {
   auth,                 // "checking" | "out" | "in"

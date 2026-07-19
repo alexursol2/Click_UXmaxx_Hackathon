@@ -33,5 +33,9 @@ next-env.d.ts
 # vercel
 .vercel
 
+# library build output (generated on publish via prepublishOnly) + packed tarballs
+/dist
+*.tgz
+
 # abandoned browser-extension experiment (kept locally, not part of the submission)
 /click-extension

@@ -32,3 +32,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# abandoned browser-extension experiment (kept locally, not part of the submission)
+/click-extension

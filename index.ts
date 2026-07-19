@@ -1,5 +1,5 @@
 /**
- * Public API of the chain-abstracted subscriptions library.
+ * Public API of the chain-abstracted payments library.
  *
  * A host app needs exactly these: wrap once with the provider, then read the
  * hooks. Everything else in `components/` is demo UI, not part of the library.
@@ -7,7 +7,8 @@
  *   import {
  *     UniversalSubscriptionProvider,
  *     useUniversalUpgrade,
- *     useSubscription,
+ *     useCheckout,     // one-time, dynamic-amount charge (storefront)
+ *     useSubscription, // recurring charge (subscription)
  *   } from "click-universal-subscriptions";
  */
 
@@ -29,6 +30,13 @@ export {
   type TransferInput,
   type HistoryEntry,
 } from "./hooks/useUniversalUpgrade";
+
+// One-time checkout: pay an arbitrary amount to the merchant (storefront demo)
+export {
+  useCheckout,
+  type UseCheckout,
+  type CheckoutResult,
+} from "./hooks/useCheckout";
 
 // The subscription layer: charge, cancel/resume, pay-with, on-chain Pro state
 export {

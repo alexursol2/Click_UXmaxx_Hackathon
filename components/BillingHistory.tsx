@@ -4,14 +4,14 @@ import { useEffect, useState } from "react";
 import type { HistoryEntry } from "@/hooks/useUniversalUpgrade";
 import { useSubscriptionConfig } from "./UniversalSubscriptionProvider";
 import { cn, formatUsd } from "@/lib/utils";
-import { chainList } from "@/lib/chains";
 import { getFee } from "@/lib/feeLedger";
 import { HistoryIcon } from "./icons";
 
 /**
  * On-chain billing history, in a side drawer that expands on click. Every row
- * is a real settled/failed transaction from Particle's ledger — payments plus
- * the cross-chain conversions that funded them. Fees are read from the local
+ * is a real settled/failed payment from Particle's ledger. The cross-chain
+ * conversions that fund a payment are hidden — they're an internal detail, not
+ * something the user should have to reason about. Fees are read from the local
  * fee ledger (Particle's history doesn't expose them).
  */
 export function BillingHistory({
@@ -30,7 +30,14 @@ export function BillingHistory({
     if (!open) return;
     let alive = true;
     getHistory()
-      .then((h) => alive && setRows(h.slice(0, 12)))
+      // Show payments only. The cross-chain conversions that fund them are an
+      // internal implementation detail — surfacing them as a separate "exchange"
+      // row just confuses the user, so they're hidden here.
+      .then(
+        (h) =>
+          alive &&
+          setRows(h.filter((r) => r.tag !== "convert").slice(0, 12))
+      )
       .catch(() => alive && setRows([]));
     return () => {
       alive = false;
@@ -92,9 +99,7 @@ export function BillingHistory({
                   r.to?.toLowerCase() === MERCHANT_ADDRESS.toLowerCase();
                 const label = isPayment
                   ? `Payment · ${Math.abs(Number(r.amount))} ${SUBSCRIPTION_TOKEN.symbol}`
-                  : r.tag === "convert"
-                    ? `Funds sourced · ${chainList(r.fromChains)} → ${chainList(r.toChains)}`
-                    : `${r.tag} · ${r.amount}`;
+                  : `${r.tag} · ${r.amount}`;
                 const when = r.createdAt
                   ? new Date(r.createdAt).toLocaleString(undefined, {
                       month: "short",

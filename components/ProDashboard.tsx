@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useSubscription } from "@/hooks/useSubscription";
+import type { UniversalBalance } from "@/hooks/useUniversalUpgrade";
 import { logout as magicLogout } from "@/lib/magic";
 import { friendlyError } from "@/lib/utils";
-import { dominantSourceChain } from "@/lib/chains";
-import { useSubscriptionConfig } from "./UniversalSubscriptionProvider";
 import { UniversalBalanceCard } from "./UniversalBalanceCard";
 import { SubscriptionBar } from "./SubscriptionBar";
 import { BillingHistory } from "./BillingHistory";
@@ -15,11 +14,35 @@ export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
   const sub = useSubscription();
   const [uiError, setUiError] = useState<string | null>(null);
 
-  // Show the unified balance immediately on entry, before any upgrade.
+  // Show the unified balance immediately on entry, then keep it fresh with a
+  // lightweight poll every 5s (replaces the manual refresh button).
   useEffect(() => {
-    sub.refreshBalance().catch(() => setUiError(friendlyError("network")));
+    let alive = true;
+    const tick = () => {
+      sub.refreshBalance().catch(() => {
+        if (alive) setUiError(friendlyError("network"));
+      });
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Freeze the balance shown to the user while a charge is in flight. During a
+  // charge the underlying balance dips mid-flight (funds are sourced/converted
+  // before the payment settles); showing that would flash a wrong, lower number.
+  // We snapshot the balance and only let the display catch up once the charge
+  // finishes — so the number moves once, straight to its settled value.
+  const [displayBalance, setDisplayBalance] = useState<UniversalBalance | null>(
+    null
+  );
+  useEffect(() => {
+    if (!sub.charging) setDisplayBalance(sub.universalBalance);
+  }, [sub.universalBalance, sub.charging]);
 
   const onUpgrade = async () => {
     setUiError(null);
@@ -49,14 +72,6 @@ export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
     onLoggedOut();
   };
 
-  // The chain the money most visibly travels from — makes the charge visual
-  // concrete ("Base → Arbitrum") instead of a vague cross-chain hop.
-  const { settlement } = useSubscriptionConfig();
-  const sourceChain = dominantSourceChain(
-    sub.universalBalance,
-    settlement.chainId
-  );
-
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-16">
       <header className="mb-10 flex items-center justify-between sm:mb-14">
@@ -67,7 +82,7 @@ export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
             alt="Click"
             className="h-10 w-10 object-contain"
           />
-          <span className="text-4xl font-bold tracking-tight text-[color:var(--text)]">
+          <span className="text-4xl font-bold tracking-tight text-[color:var(--purple)]">
             Click
           </span>
         </div>
@@ -88,11 +103,10 @@ export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
       </header>
 
       <UniversalBalanceCard
-        balance={sub.universalBalance}
+        balance={displayBalance}
         loading={sub.loading}
         address={sub.ownerAddress}
         solanaAddress={sub.solanaAddress}
-        onRefresh={sub.refreshBalance}
       />
 
       <div className="mt-6">
@@ -106,8 +120,6 @@ export function ProDashboard({ onLoggedOut }: { onLoggedOut: () => void }) {
           error={uiError ?? sub.autoErrorMessage}
           partialPayment={sub.partialPayment}
           lowBalancePaused={sub.lowBalancePaused}
-          crossChain={sub.crossChainLastCharge || !!sourceChain}
-          sourceChainName={sourceChain?.name ?? null}
           cancelled={sub.cancelled}
           paidUntil={sub.paidUntil}
           payWith={sub.payWith}

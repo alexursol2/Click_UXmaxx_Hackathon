@@ -332,10 +332,34 @@ export function useSubscription(): UseSubscription {
   }, [universal.universalBalance?.totalUsd, payWith, charging]);
 
   /**
-   * Size the cross-chain Convert against real numbers. Start from price + a
-   * fixed buffer (the floor), ask the SDK what would actually arrive, and if
-   * that's short of price + gas floor, top the amount up by the shortfall.
-   * Returns the amount to Convert (string, in settlement-token units).
+   * How much of the settlement token the account ALREADY holds on the
+   * settlement chain. Converting the full price when some already sits on the
+   * destination chain is wasteful — we only need to source the shortfall — so
+   * this is subtracted when sizing the Convert. Returns token units (for a
+   * stablecoin, units ≈ USD).
+   */
+  const settlementChainHeld = useCallback((): number => {
+    const assets = universal.universalBalance?.assets ?? [];
+    const sym = SUBSCRIPTION_TOKEN.symbol.toUpperCase();
+    for (const a of assets) {
+      if (a.tokenType.toUpperCase() !== sym) continue;
+      for (const c of a.chainAggregation ?? []) {
+        if (c.token?.chainId !== SUBSCRIPTION_TOKEN.chainId) continue;
+        const amt = Number((c as { amount?: unknown }).amount);
+        if (Number.isFinite(amt) && amt > 0) return amt;
+        const usd = Number(c.amountInUSD);
+        return Number.isFinite(usd) && usd > 0 ? usd : 0;
+      }
+    }
+    return 0;
+  }, [universal.universalBalance]);
+
+  /**
+   * Size the cross-chain Convert against real numbers. We only source the
+   * SHORTFALL (price minus what's already on the settlement chain) plus a fixed
+   * buffer for the follow-up transfer's gas — not the whole price. Then we ask
+   * the SDK what would actually arrive and, if that's short of the gas floor,
+   * top the amount up. Returns the amount to Convert (settlement-token units).
    */
   const sizeConvertAmount = useCallback(async (): Promise<string> => {
     const price = Number(SUBSCRIPTION_TOKEN.amount);
@@ -343,7 +367,11 @@ export function useSubscription(): UseSubscription {
     const tokenType = isEth ? SUPPORTED_TOKEN_TYPE.ETH : SUPPORTED_TOKEN_TYPE.USDC;
     const buffer = isEth ? CROSS_CHAIN.bufferEth : CROSS_CHAIN.bufferUsd;
 
-    let amount = (price + buffer).toFixed(8);
+    // Only bridge what's missing on the settlement chain.
+    const held = settlementChainHeld();
+    const shortfall = Math.max(0, price - held);
+
+    let amount = (shortfall + buffer).toFixed(8);
     try {
       const chosen = payWithRef.current;
       const q = await universal.estimateConvert({
@@ -352,22 +380,21 @@ export function useSubscription(): UseSubscription {
         amount,
         usePrimaryTokens: chosen === "auto" ? undefined : [chosen],
       });
-      // How much value must land so the follow-up transfer of `price` clears
-      // its own settlement-chain gas. For USDC, price≈USD so the check is
-      // direct; for ETH we compare the quote's USD arrival to the buffer's USD
-      // floor (gasFloorUsd) as a proxy.
-      const neededUsd = CROSS_CHAIN.gasFloorUsd; // headroom above the price
-      const arrivesHeadroomUsd = q.arrivesUsd - price; // for USDC price≈USD
+      // Enough must arrive so that held + arrived covers price + settlement-chain
+      // gas. For USDC, units≈USD so the check is direct; ETH uses the fixed
+      // buffer as its gas floor (skipped here).
+      const neededUsd = CROSS_CHAIN.gasFloorUsd; // headroom above the shortfall
+      const arrivesHeadroomUsd = q.arrivesUsd - shortfall; // for USDC units≈USD
       if (!isEth && arrivesHeadroomUsd < neededUsd) {
         const shortfallUsd = neededUsd - arrivesHeadroomUsd;
-        amount = (price + buffer + shortfallUsd).toFixed(8);
+        amount = (shortfall + buffer + shortfallUsd).toFixed(8);
       }
     } catch {
       // Quote unavailable (maintenance, etc.) — fall back to the fixed floor.
       // The transfer step will still surface a clear error if it's short.
     }
     return amount;
-  }, [universal]);
+  }, [universal, settlementChainHeld]);
 
   const runCharge = useCallback(async (): Promise<void> => {
     setCharging(true);
@@ -420,11 +447,15 @@ export function useSubscription(): UseSubscription {
             });
           } catch (convErr) {
             // Chosen coin can't cover it alone → combine coins (auto source).
+            // Particle signals this as -32673 ("insufficient primary token"),
+            // or by failing to build a route ("no tx generated").
             const m = (
               convErr instanceof Error ? convErr.message : String(convErr)
             ).toLowerCase();
             const noRoute =
-              m.includes("no tx generated") || m.includes("insufficient");
+              m.includes("no tx generated") ||
+              m.includes("insufficient") ||
+              m.includes("-32673");
             if (chosen !== "auto" && noRoute) {
               convert = await universal.sendConvertTransaction({
                 chainId: SUBSCRIPTION_TOKEN.chainId,

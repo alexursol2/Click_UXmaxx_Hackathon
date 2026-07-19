@@ -1,112 +1,37 @@
 "use client";
 
 import type { ChargeStage } from "@/hooks/useSubscription";
-import { useSubscriptionConfig } from "./UniversalSubscriptionProvider";
-import { chainName } from "@/lib/chains";
 import { cn } from "@/lib/utils";
 
-const STEPS: { key: ChargeStage; label: string }[] = [
-  { key: "sourcing", label: "Sourcing funds" },
-  { key: "converting", label: "Converting across chains" },
-  { key: "bridging", label: "Bridging" },
-  { key: "paying", label: "Paying merchant" },
-  { key: "confirming", label: "Confirming on-chain" },
+/**
+ * Neutral, user-facing steps. The internal charge has more stages (sourcing,
+ * converting, bridging, …) but the cross-chain conversion is an implementation
+ * detail — surfacing "Converting across chains" / "Bridging" as an exchange
+ * only confuses the user, so several internal stages collapse into a single
+ * "Preparing payment" step here.
+ */
+const STEPS: { label: string; stages: ChargeStage[] }[] = [
+  { label: "Preparing payment", stages: ["sourcing", "converting", "bridging"] },
+  { label: "Paying merchant", stages: ["paying"] },
+  { label: "Confirming on-chain", stages: ["confirming"] },
 ];
 
-
 /**
- * Live stepper shown while a charge is in flight. The steps mirror what the
- * Universal Account is actually doing — sourcing, converting, bridging,
- * paying, confirming — so the wait itself demonstrates chain abstraction.
- *
- * When the charge crosses chains, a "journey" banner sits on top making the
- * money's path explicit: it starts on another chain, gets converted + bridged,
- * and lands as the settlement token on the merchant's chain. That hop is the
- * whole point of a Universal Account, so we show it, we don't hide it.
+ * Live stepper shown while a charge is in flight. Deliberately minimal: it
+ * reflects progress without exposing the under-the-hood routing.
  */
-export function ChargeProgress({
-  stage,
-  crossChain = false,
-  sourceChainName,
-}: {
-  stage: ChargeStage;
-  crossChain?: boolean;
-  sourceChainName?: string | null;
-}) {
-  const { settlement } = useSubscriptionConfig();
-  const settlementName = chainName(settlement.chainId);
-
+export function ChargeProgress({ stage }: { stage: ChargeStage }) {
   if (stage === "idle") return null;
-  const activeIdx = STEPS.findIndex((s) => s.key === stage);
-
-  // Which end of the journey is "lit" right now.
-  const traveling =
-    stage === "sourcing" || stage === "converting" || stage === "bridging";
-  const landed = stage === "paying" || stage === "confirming";
-  const from = sourceChainName || "another chain";
+  const activeIdx = STEPS.findIndex((s) => s.stages.includes(stage));
 
   return (
     <div className="rounded-xl border border-[color:var(--border)] bg-[#9b03f2]/[0.04] px-4 py-3">
-      {crossChain && (
-        <div className="mb-3 rounded-lg border border-[#9b03f2]/25 bg-[#9b03f2]/[0.08] px-3 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            {/* Source chain */}
-            <div className="flex flex-col items-center gap-1 text-center">
-              <span
-                className={cn(
-                  "rounded-md px-2 py-1 text-xs font-semibold transition-colors",
-                  traveling
-                    ? "bg-[#9b03f2]/25 text-[color:var(--text)]"
-                    : "bg-[#9b03f2]/[0.05] text-[color:var(--muted)]"
-                )}
-              >
-                {from}
-              </span>
-              <span className="text-[10px] text-[color:var(--muted)]">holds funds</span>
-            </div>
-
-            {/* Animated path */}
-            <div className="relative mx-1 flex-1">
-              <div className="h-px w-full bg-[#9b03f2]/40" />
-              <div
-                className={cn(
-                  "absolute -top-[5px] h-2.5 w-2.5 rounded-full bg-[#ef6ffd] shadow-[0_0_10px_#9b03f2]",
-                  traveling && "animate-[slide_1.4s_ease-in-out_infinite]",
-                  landed && "right-0"
-                )}
-                style={!traveling && landed ? { right: 0 } : { left: 0 }}
-              />
-            </div>
-
-            {/* Destination chain */}
-            <div className="flex flex-col items-center gap-1 text-center">
-              <span
-                className={cn(
-                  "rounded-md px-2 py-1 text-xs font-semibold transition-colors",
-                  landed
-                    ? "bg-emerald-400/20 text-emerald-700"
-                    : "bg-[#9b03f2]/[0.05] text-[color:var(--muted)]"
-                )}
-              >
-                {settlementName}
-              </span>
-              <span className="text-[10px] text-[color:var(--muted)]">merchant paid</span>
-            </div>
-          </div>
-          <p className="mt-2 text-center text-[11px] text-[color:var(--accent)]/80">
-            {landed
-              ? `Merchant receiving ${settlement.symbol} on ${settlementName}`
-              : `Moving ${from} funds → ${settlement.symbol} on ${settlementName}`}
-          </p>
-        </div>
-      )}
-
       <ol className="space-y-2">
         {STEPS.map((step, i) => {
           const done = i < activeIdx;
           const active = i === activeIdx;
           return (
-            <li key={step.key} className="flex items-center gap-2.5 text-xs">
+            <li key={step.label} className="flex items-center gap-2.5 text-xs">
               <span
                 className={cn(
                   "flex h-4 w-4 items-center justify-center rounded-full border",

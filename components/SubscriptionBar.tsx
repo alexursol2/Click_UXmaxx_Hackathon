@@ -23,8 +23,6 @@ export interface SubscriptionPanelProps {
   error: string | null;
   partialPayment: boolean;
   lowBalancePaused: boolean;
-  crossChain: boolean;
-  sourceChainName: string | null;
   cancelled: boolean;
   paidUntil: number | null;
   payWith: PayWith;
@@ -77,8 +75,6 @@ export function SubscriptionBar(props: SubscriptionPanelProps) {
     error,
     partialPayment,
     lowBalancePaused,
-    crossChain,
-    sourceChainName,
     cancelled,
     paidUntil,
     payWith,
@@ -113,11 +109,7 @@ export function SubscriptionBar(props: SubscriptionPanelProps) {
         ? `Valid until ${validUntil} · cycle ${Math.min(chargeCount, DEMO_BILLING.maxCycles)}/${DEMO_BILLING.maxCycles}`
         : `Renews monthly · valid until ${validUntil} · cancel anytime`
       : price
-    : estimatedFee != null
-      ? `${price} · fee ~${formatUsd(estimatedFee)}${estimatedCrossChain ? " cross-chain" : ""}`
-      : estimating
-        ? `${price} · estimating fee…`
-        : price;
+    : price; // detailed fee lives under the pay-with selector when expanded
 
   return (
     <div
@@ -186,11 +178,7 @@ export function SubscriptionBar(props: SubscriptionPanelProps) {
       {/* Inline progress while charging */}
       {charging && (
         <div className="mt-4">
-          <ChargeProgress
-            stage={stage}
-            crossChain={crossChain}
-            sourceChainName={sourceChainName}
-          />
+          <ChargeProgress stage={stage} />
         </div>
       )}
 
@@ -227,12 +215,19 @@ export function SubscriptionBar(props: SubscriptionPanelProps) {
           </ul>
 
           {!active && !cancelled && (
-            <PayWithSelector
-              value={payWith}
-              tokens={availableTokens}
-              onChange={onPayWith}
-              disabled={busy}
-            />
+            <div className="space-y-2">
+              <PayWithSelector
+                value={payWith}
+                tokens={availableTokens}
+                onChange={onPayWith}
+                disabled={busy}
+              />
+              <FeeEstimate
+                fee={estimatedFee}
+                crossChain={estimatedCrossChain}
+                estimating={estimating}
+              />
+            </div>
           )}
 
           {active &&
@@ -263,6 +258,39 @@ export function SubscriptionBar(props: SubscriptionPanelProps) {
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Predicted network fee for the next charge, shown under the pay-with selector.
+ * Comes from a free read-only quote (no signature, no spend) and re-computes
+ * when the balance or the chosen coin changes. Distinguishes a same-chain
+ * transfer from a cross-chain route (which pays for a swap + a bridge).
+ */
+function FeeEstimate({
+  fee,
+  crossChain,
+  estimating,
+}: {
+  fee: number | null;
+  crossChain: boolean;
+  estimating: boolean;
+}) {
+  if (estimating && fee == null) {
+    return (
+      <p className="text-xs text-[color:var(--muted)]">
+        Estimating network fee…
+      </p>
+    );
+  }
+  if (fee == null) return null;
+  return (
+    <p className="text-xs text-[color:var(--muted)]">
+      Est. network fee ~{formatUsd(fee)} ·{" "}
+      <span className="text-[color:var(--text)]">
+        {crossChain ? "cross-chain (swap + bridge)" : "same-chain"}
+      </span>
+    </p>
   );
 }
 

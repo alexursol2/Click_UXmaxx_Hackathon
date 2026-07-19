@@ -1,8 +1,8 @@
-# Click — chain-abstracted subscriptions
+# Click — chain-abstracted payments
 
-**Log in with an email. Pay a recurring subscription from one balance — even if
-your money is on Solana and the merchant is on Arbitrum.** No seed phrase, no
-network switching, no bridging, no signing popups.
+**Log in with an email. Pay from one balance — even if your money is on Solana
+and the merchant is on Arbitrum.** No seed phrase, no network switching, no
+bridging, no signing popups. Buy in one click, or subscribe.
 
 Built for the **UXmaxx hackathon — Universal Accounts track** on
 **Magic** (embedded email wallet) + **Particle Network Universal Accounts**
@@ -14,8 +14,13 @@ Built for the **UXmaxx hackathon — Universal Accounts track** on
 
 This repo is two things at once:
 
-1. A **demo storefront** ("Click Pro") you can run in two minutes.
-2. A **reusable library** — wrap a provider, call two hooks, done.
+1. A **demo storefront** — **OnlyCrabs**, where every "Pay with crypto in one
+   Click" button charges from your unified balance. Click **Account** to sign in
+   (email OTP) and see your balance, add funds, and pick which coin pays. Once
+   signed in, a buy charges silently — the only thing you see is a live status
+   card. Run it in two minutes.
+2. A **reusable library** — wrap a provider, call a hook. Two charge shapes:
+   `useCheckout` (one-time, any amount) and `useSubscription` (recurring).
 
 ---
 
@@ -39,7 +44,7 @@ This repo is two things at once:
 
 Everything a host app configures lives in one object, injected via a provider.
 The demo works with zero props (env defaults); any other business drops the
-provider in and it's their subscription — no code edits.
+provider in and it's their storefront — no code edits.
 
 ```tsx
 // 1. Wrap once
@@ -57,16 +62,22 @@ import { UniversalSubscriptionProvider } from "@/components/UniversalSubscriptio
 
 ```tsx
 // 2. Read the hooks anywhere
-import { useUniversalUpgrade } from "@/hooks/useUniversalUpgrade";
-import { useSubscription } from "@/hooks/useSubscription";
 
-const { upgrade, isUniversal, universalBalance } = useUniversalUpgrade();
+// One-time buy (storefront) — pay any amount from the unified balance:
+import { useCheckout } from "@/hooks/useCheckout";
+const { checkout, charging, stage } = useCheckout();
+await checkout(0.1); // charges $0.10 to the merchant, cross-chain if needed
+
+// Or recurring (subscription):
+import { useSubscription } from "@/hooks/useSubscription";
 const { chargeSubscription, cancelSubscription, subscriptionActive } =
   useSubscription();
 ```
 
-The reusable core is `components/UniversalSubscriptionProvider` + `hooks/*` +
-`lib/magic.ts`. The public surface is re-exported from [`index.ts`](./index.ts).
+Both charge shapes sit on the same core — `useUniversalUpgrade` (email EOA →
+Universal Account + unified cross-chain balance). The reusable core is
+`components/UniversalSubscriptionProvider` + `hooks/*` + `lib/magic.ts`; the
+public surface is re-exported from [`index.ts`](./index.ts).
 
 ---
 
@@ -119,7 +130,8 @@ Supported source tokens: **ETH, USDC, USDT, BNB, SOL**. Supported chains:
 
 On Particle's v2 backend a **transfer** only spends tokens already on the
 settlement chain; cross-chain sourcing is a **Convert** that rebalances your
-assets first. `chargeSubscription()` handles it end to end:
+assets first. Both `checkout()` (one-time) and `chargeSubscription()` (recurring)
+run the same engine end to end:
 
 ```
 transfer ── funds already on settlement chain? ──▶ settle ✓
@@ -211,19 +223,24 @@ access until the period ends (persisted per wallet).
 
 ```
 app/                            # Next.js App Router
-  layout.tsx · page.tsx         #   fonts, auth gate (login ⇄ dashboard), bg clouds
+  layout.tsx · page.tsx         #   fonts + providers; page renders the storefront
+  globals.css · onlycrabs.css   #   Click theme; storefront styles (scoped .oc-root)
 index.ts                        # ★ public library API (barrel)
 components/
   UniversalSubscriptionProvider #   config injection (env defaults or props)
+  StoreProvider                 #   shared session: checkout + auth + buy/login gate
+  Storefront                    #   OnlyCrabs demo: products, cart, one-click pay, status
+  AccountModal                  #   Account panel: login, then balance + pay-with + history
   UniversalBalanceCard          #   unified balance, EVM+Solana addresses, holdings
-  SubscriptionBar               #   bottom bar: benefits (hover/tap), GET PRO, cancel
-  ChargeProgress                #   live cross-chain journey stepper
+  ChargeProgress                #   live charge stepper
   BillingHistory                #   on-chain receipts drawer + total fees
+  ProDashboard · SubscriptionBar#   subscription demo UI (recurring; library feature)
   LoginCard · Button · icons · TokenIcon · PayWithSelector
 hooks/
-  useUniversalUpgrade.ts        # ★ the product: upgrade, unified balance,
+  useUniversalUpgrade.ts        # ★ the core: upgrade, unified balance,
                                 #   transfer/convert/quote, settlement polling, history
-  useSubscription.ts            #   charge flow, on-chain Pro state, pay-with, demo billing
+  useCheckout.ts                #   one-time, dynamic-amount charge (the storefront)
+  useSubscription.ts            #   recurring charge, on-chain Pro state, demo billing
   useHoverable.ts               #   hover on desktop, tap on mobile
 lib/
   magic.ts                      #   email login, ethers signer, 7702 signature adapter
@@ -247,7 +264,8 @@ Re-exported from [`index.ts`](./index.ts):
 
 - `UniversalSubscriptionProvider`, `useSubscriptionConfig`, `configFromEnv`, `UniversalSubscriptionConfig`
 - `useUniversalUpgrade` + types (`UniversalBalance`, `TransferInput`, `HistoryEntry`)
-- `useSubscription` + types (`PayWith`, `AvailableToken`, `ChargeStage`)
+- `useCheckout` + types (`UseCheckout`, `CheckoutResult`) — one-time charge
+- `useSubscription` + types (`PayWith`, `AvailableToken`, `ChargeStage`) — recurring
 - `classifyError`, `friendlyError`, `ClassifiedError`
 
 ---

@@ -127,21 +127,23 @@ html { scroll-behavior: smooth; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-family: var(--font-rounded), "Quicksand", ui-rounded, system-ui, sans-serif;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 10px 16px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  padding: 10px 20px;
   border: 2px solid var(--pay);
-  background: var(--white);
-  color: var(--pay);
+  background: var(--pay);
+  color: var(--white);
   cursor: pointer;
-  border-radius: 0;
+  border-radius: 14px;
 }
-.account-btn:hover { background: var(--pay); color: var(--white); }
+.account-btn:hover { background: var(--pay-dark); border-color: var(--pay-dark); }
 .account-dot {
   width: 8px; height: 8px; border-radius: 50%;
-  background: #16a34a; display: inline-block;
+  background: #22c55e; display: inline-block;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
 }
 
 .cart-btn {
@@ -304,6 +306,29 @@ html { scroll-behavior: smooth; }
   display: flex; justify-content: space-between; font-size: 18px; font-weight: 800;
   margin-bottom: 16px; text-transform: uppercase;
 }
+
+/* ===== PAYMENT METHODS (Click first; the rest are decorative) ===== */
+.pay-methods { display: flex; flex-direction: column; gap: 10px; }
+.pay-divider {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--gray-600); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  margin: 4px 0;
+}
+.pay-divider::before, .pay-divider::after {
+  content: ""; flex: 1; height: 2px; background: var(--gray-200);
+}
+.pay-method {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 13px 16px;
+  border: 2px solid var(--black); background: var(--white); color: var(--black);
+  font-size: 14px; font-weight: 700; letter-spacing: 0.02em;
+  cursor: pointer; border-radius: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.pay-method:hover { background: var(--black); color: var(--white); }
+.pay-method:active { transform: translateY(1px); }
+.pay-method svg { height: 18px; width: 18px; flex: none; }
 
 /* ===== ADD-TO-CART TOAST ===== */
 .oc-toast {

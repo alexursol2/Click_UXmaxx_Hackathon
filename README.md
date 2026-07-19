@@ -88,6 +88,7 @@ const {
   universalBalance,     // unified cross-chain balance
   payWith, setPayWith, availableTokens,   // which coin funds the charge
   pay,                  // pay(amount, label): login-gates + shows status for you
+  withdraw,             // withdraw(amount, toAddress): send funds to an external wallet
   checkout,             // checkout(amount): charge directly (throws on failure)
   charging, stage,      // live progress
 } = useClickAccount();

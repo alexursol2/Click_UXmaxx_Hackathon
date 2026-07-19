@@ -84,8 +84,15 @@ export async function loginWithEmail(email: string): Promise<void> {
 }
 
 export async function logout(): Promise<void> {
-  await getMagic().user.logout();
-  signerCache = null;
+  try {
+    await getMagic().user.logout();
+  } finally {
+    // Reset the client + signer so the next isLoggedIn()/getMagic() rebuilds a
+    // fresh, cleanly signed-out instance (a stale singleton can report stale
+    // session state). runtimeConfig is kept so re-login needs no reconfigure.
+    signerCache = null;
+    magicSingleton = null;
+  }
 }
 
 export async function isLoggedIn(): Promise<boolean> {

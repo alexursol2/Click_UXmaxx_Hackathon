@@ -28,12 +28,18 @@ export type AuthState = "checking" | "out" | "in";
 
 export interface PayStatus {
   kind: "charging" | "success" | "error";
+  /** "pay" = to the merchant; "withdraw" = to the user's external address. */
+  mode: "pay" | "withdraw";
   label: string;
   amountUsd: number;
   message?: string;
+  /** Re-runs the same action (used by the status card's "Try again"). */
+  retry?: () => void;
 }
 
-export interface StoreContextValue extends UseCheckout {
+// `withdraw` is re-declared at the store level as a fire-and-forget action (it
+// drives the status card), so omit the raw Promise version from UseCheckout.
+export interface StoreContextValue extends Omit<UseCheckout, "withdraw"> {
   auth: AuthState;
   /** Called by the login form once Magic OTP succeeds. */
   onLoggedIn: () => void;
@@ -45,6 +51,8 @@ export interface StoreContextValue extends UseCheckout {
 
   /** Entry point for every buy button. Handles the login gate + status. */
   pay: (amountUsd: number, label: string) => void;
+  /** Withdraw to an external address. Shows progress in the status card. */
+  withdraw: (amountUsd: number, toAddress: string) => void;
   status: PayStatus | null;
   dismissStatus: () => void;
 
@@ -62,6 +70,11 @@ export function useStore(): StoreContextValue {
 
 /** localStorage flag: were we signed in? Lets refresh restore the UI instantly. */
 const AUTH_FLAG = "click:auth";
+
+/** Shorten an address for labels: 0x1234…abcd. */
+function shortAddr(a: string): string {
+  return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+}
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const checkout = useCheckout();
@@ -116,16 +129,41 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const runPay = useCallback(
     async (amountUsd: number, label: string) => {
-      setStatus({ kind: "charging", label, amountUsd });
+      const retry = () => void runPay(amountUsd, label);
+      setStatus({ kind: "charging", mode: "pay", label, amountUsd, retry });
       try {
         await checkout.checkout(amountUsd);
         setChargeCount((n) => n + 1);
-        setStatus({ kind: "success", label, amountUsd });
+        setStatus({ kind: "success", mode: "pay", label, amountUsd });
       } catch (e) {
         setStatus({
           kind: "error",
+          mode: "pay",
           label,
           amountUsd,
+          retry,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [checkout]
+  );
+
+  const runWithdraw = useCallback(
+    async (amountUsd: number, toAddress: string) => {
+      const label = shortAddr(toAddress);
+      const retry = () => void runWithdraw(amountUsd, toAddress);
+      setStatus({ kind: "charging", mode: "withdraw", label, amountUsd, retry });
+      try {
+        await checkout.withdraw(amountUsd, toAddress);
+        setStatus({ kind: "success", mode: "withdraw", label, amountUsd });
+      } catch (e) {
+        setStatus({
+          kind: "error",
+          mode: "withdraw",
+          label,
+          amountUsd,
+          retry,
           message: e instanceof Error ? e.message : String(e),
         });
       }
@@ -147,6 +185,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [auth, runPay]
   );
 
+  const withdraw = useCallback(
+    (amountUsd: number, toAddress: string) => {
+      if (amountUsd <= 0 || !toAddress) return;
+      // Close the Account panel so the status card (bottom-right) is visible.
+      setAccountOpen(false);
+      void runWithdraw(amountUsd, toAddress);
+    },
+    [runWithdraw]
+  );
+
   const onLoggedIn = useCallback(() => {
     setAuth("in");
     if (typeof window !== "undefined")
@@ -162,11 +210,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [runPay]);
 
   const logout = useCallback(async () => {
-    await magicLogout();
-    pendingRef.current = null;
-    if (typeof window !== "undefined") window.localStorage.removeItem(AUTH_FLAG);
-    setAuth("out");
-    setAccountOpen(false);
+    // Always tear down the LOCAL session, even if Magic's logout rejects or
+    // hangs (which on mainnet would otherwise leave the button doing nothing).
+    try {
+      await magicLogout();
+    } catch (e) {
+      console.warn("Magic logout failed; clearing local session anyway.", e);
+    } finally {
+      pendingRef.current = null;
+      if (typeof window !== "undefined") window.localStorage.removeItem(AUTH_FLAG);
+      setAuth("out");
+      setAccountOpen(false);
+      setStatus(null);
+    }
   }, []);
 
   const value: StoreContextValue = {
@@ -178,6 +234,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     openAccount: () => setAccountOpen(true),
     closeAccount: () => setAccountOpen(false),
     pay,
+    withdraw, // store-level (void) — overrides the raw Promise from ...checkout
     status,
     dismissStatus: () => setStatus(null),
     chargeCount,

@@ -41,6 +41,8 @@ export interface CheckoutResult {
 export interface UseCheckout extends Omit<UseUniversalUpgrade, "error"> {
   /** Pay `amountUsd` to the merchant. Resolves once settled on-chain. */
   checkout: (amountUsd: number) => Promise<CheckoutResult>;
+  /** Withdraw `amountUsd` of the settlement token to an external address. */
+  withdraw: (amountUsd: number, toAddress: string) => Promise<CheckoutResult>;
   charging: boolean;
   stage: ChargeStage;
   /** True when the in-flight (or last) charge needed cross-chain routing. */
@@ -76,9 +78,10 @@ export function useCheckout(): UseCheckout {
   }, []);
 
   // Resume-safety: once a Convert has settled for an in-flight charge, remember
-  // it (and the amount) so a retry finishes the payment without converting twice.
+  // it (keyed by receiver+amount) so a retry finishes the transfer without
+  // converting twice.
   const convertSettledRef = useRef(false);
-  const pendingAmountRef = useRef<number | null>(null);
+  const pendingKeyRef = useRef<string | null>(null);
   const convertFeeRef = useRef(0);
   // The Universal Account must be established (smart-account + delegation state
   // resolved) BEFORE the first transaction is built, or the SDK signs a UserOp
@@ -158,11 +161,18 @@ export function useCheckout(): UseCheckout {
     [universal, settlementChainHeld]
   );
 
-  const checkout = useCallback(
-    async (amountUsd: number): Promise<CheckoutResult> => {
+  /**
+   * Core engine: move `amountUsd` of the settlement token to `receiver` from the
+   * unified balance (direct transfer, or Convert-then-transfer if the funds live
+   * on other chains). `receiver` = merchant for a checkout, or the user's own
+   * external address for a withdrawal — the rails are identical.
+   */
+  const runCharge = useCallback(
+    async (amountUsd: number, receiver: string): Promise<CheckoutResult> => {
       setCharging(true);
       setError(null);
       setCrossChain(false);
+      const key = `${receiver.toLowerCase()}:${amountUsd}`;
       try {
         // Establish the UA once per session before building any transaction.
         if (!initedRef.current) {
@@ -175,13 +185,13 @@ export function useCheckout(): UseCheckout {
           universal.sendUniversalTransaction({
             token: { chainId: TOKEN.chainId, address: TOKEN.address },
             amount: String(amountUsd),
-            receiver: MERCHANT,
+            receiver,
           });
 
         let result: CheckoutResult;
 
-        if (convertSettledRef.current && pendingAmountRef.current === amountUsd) {
-          // RESUME: funds already Converted onto the settlement chain — just pay.
+        if (convertSettledRef.current && pendingKeyRef.current === key) {
+          // RESUME: funds already Converted onto the settlement chain — just send.
           setCrossChain(true);
           setStage("paying");
           result = await transfer();
@@ -229,7 +239,7 @@ export function useCheckout(): UseCheckout {
             // Money is on the settlement chain now — a later failure is a
             // resumable PARTIAL payment.
             convertSettledRef.current = true;
-            pendingAmountRef.current = amountUsd;
+            pendingKeyRef.current = key;
 
             setStage("paying");
             result = await transfer();
@@ -240,7 +250,7 @@ export function useCheckout(): UseCheckout {
         await universal.waitForSettlement(result.transactionId);
 
         convertSettledRef.current = false;
-        pendingAmountRef.current = null;
+        pendingKeyRef.current = null;
         recordFee(result.transactionId, convertFeeRef.current + result.feeUsd);
         convertFeeRef.current = 0;
         return result;
@@ -256,9 +266,22 @@ export function useCheckout(): UseCheckout {
     [universal, sizeConvertAmount]
   );
 
+  /** Pay the merchant (the storefront's one-click checkout). */
+  const checkout = useCallback(
+    (amountUsd: number) => runCharge(amountUsd, MERCHANT),
+    [runCharge, MERCHANT]
+  );
+
+  /** Withdraw `amountUsd` of the settlement token to an external address. */
+  const withdraw = useCallback(
+    (amountUsd: number, toAddress: string) => runCharge(amountUsd, toAddress),
+    [runCharge]
+  );
+
   return {
     ...universal,
     checkout,
+    withdraw,
     charging,
     stage,
     crossChain,

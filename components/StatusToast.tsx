@@ -21,11 +21,15 @@ export function StatusToast() {
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[color:var(--text)]">
-            {status.kind === "charging" && "Paying…"}
-            {status.kind === "success" && "Paid ✓"}
-            {status.kind === "error" && "Payment failed"}
+            {status.kind === "charging" &&
+              (status.mode === "withdraw" ? "Withdrawing…" : "Paying…")}
+            {status.kind === "success" &&
+              (status.mode === "withdraw" ? "Sent ✓" : "Paid ✓")}
+            {status.kind === "error" &&
+              (status.mode === "withdraw" ? "Withdrawal failed" : "Payment failed")}
           </p>
           <p className="text-xs text-[color:var(--muted)]">
+            {status.mode === "withdraw" ? "To " : ""}
             {status.label} · {formatUsd(status.amountUsd)}
           </p>
         </div>
@@ -53,20 +57,23 @@ export function StatusToast() {
 
       {status.kind === "success" && (
         <p className="text-xs text-emerald-600">
-          The merchant received {formatUsd(status.amountUsd)} — sourced from your
-          unified cross-chain balance.
+          {status.mode === "withdraw"
+            ? `Sent ${formatUsd(status.amountUsd)} to ${status.label} — from your unified cross-chain balance.`
+            : `The merchant received ${formatUsd(status.amountUsd)} — sourced from your unified cross-chain balance.`}
         </p>
       )}
 
       {status.kind === "error" && (
         <div>
           <p className="mb-2 text-xs text-red-600">{status.message}</p>
-          <button
-            onClick={() => store.pay(status.amountUsd, status.label)}
-            className="rounded-lg border border-[color:var(--border)] px-3 py-1.5 text-xs font-medium text-[color:var(--text)] transition-colors hover:bg-[color:var(--panel)]"
-          >
-            Try again
-          </button>
+          {status.retry && (
+            <button
+              onClick={status.retry}
+              className="rounded-lg border border-[color:var(--border)] px-3 py-1.5 text-xs font-medium text-[color:var(--text)] transition-colors hover:bg-[color:var(--panel)]"
+            >
+              Try again
+            </button>
+          )}
         </div>
       )}
     </div>

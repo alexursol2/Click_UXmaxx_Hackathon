@@ -63,6 +63,7 @@ export function AccountModal() {
 
 function AccountDashboard() {
   const store = useStore();
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   return (
     <div className="rounded-3xl border border-[color:var(--border)] bg-white p-5 shadow-2xl sm:p-7">
@@ -71,10 +72,22 @@ function AccountDashboard() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="Click" className="h-8 w-8 object-contain" />
           <span className="text-2xl font-bold tracking-tight text-[color:var(--purple)]">
-            Account
+            Click
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Withdraw — plain grey text button, left of the history icon */}
+          <button
+            onClick={() => setWithdrawOpen((v) => !v)}
+            className={
+              "text-sm transition-colors " +
+              (withdrawOpen
+                ? "text-[color:var(--text)]"
+                : "text-[color:var(--muted)] hover:text-[color:var(--text)]")
+            }
+          >
+            Withdraw
+          </button>
           <BillingHistory
             getHistory={store.getHistory}
             refreshKey={store.chargeCount}
@@ -97,6 +110,7 @@ function AccountDashboard() {
         solanaAddress={store.solanaAddress}
       />
 
+      {/* Pay-with coin selector — DO NOT REMOVE. Shows only with 2+ coins. */}
       <div className="mt-5">
         <PayWithSelector
           value={store.payWith}
@@ -106,7 +120,7 @@ function AccountDashboard() {
         />
       </div>
 
-      <WithdrawPanel />
+      {withdrawOpen && <WithdrawForm />}
 
       <p className="mt-5 text-center text-xs text-[color:var(--muted)]">
         Pay for anything on the store in one click — funds are sourced from this
@@ -120,8 +134,11 @@ function AccountDashboard() {
  * Withdraw funds from the unified balance to an EXTERNAL wallet. Same rails as a
  * payment (transfer, or Convert-then-transfer across chains) — just the user's
  * own address instead of the merchant. Non-custodial: no lock-in.
+ *
+ * Rendered only when the header "Withdraw" button toggles it on — it must NEVER
+ * displace or gate the pay-with selector, which lives above it independently.
  */
-function WithdrawPanel() {
+function WithdrawForm() {
   const store = useStore();
   const { settlement } = useSubscriptionConfig();
   const isSol = settlement.symbol === "SOL";
@@ -129,7 +146,6 @@ function WithdrawPanel() {
   const available = store.universalBalance?.totalUsd ?? 0;
   const maxWithdraw = Math.floor(available * 100) / 100; // don't round above balance
 
-  const [open, setOpen] = useState(false);
   const [address, setAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -153,75 +169,64 @@ function WithdrawPanel() {
       setError(`Amount exceeds your balance (${formatUsd(available)})`);
       return;
     }
-    store.withdraw(amt, addr); // closes the panel + shows the status card
+    store.withdraw(amt, addr); // closes the account panel + shows the status card
   };
 
   return (
-    <div className="mt-5 rounded-2xl border border-[color:var(--border)] p-4">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-left"
-      >
-        <span className="text-sm font-semibold text-[color:var(--text)]">
-          Withdraw to external wallet
-        </span>
-        <span className="text-xs text-[color:var(--muted)]">{open ? "▲" : "▼"}</span>
-      </button>
+    <div className="mt-4 space-y-3 rounded-2xl border border-[color:var(--border)] p-4">
+      <p className="text-sm font-semibold text-[color:var(--text)]">
+        Withdraw to external wallet
+      </p>
 
-      {open && (
-        <div className="mt-3 space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]">
-              Destination address · {net}
-            </label>
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder={isSol ? "Solana address" : "0x…"}
-              spellCheck={false}
-              className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 font-mono text-sm text-[color:var(--text)] placeholder:text-gray-400 focus:border-[color:var(--purple)] focus:outline-none"
-            />
-          </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]">
+          Destination address · {net}
+        </label>
+        <input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder={isSol ? "Solana address" : "0x…"}
+          spellCheck={false}
+          className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 font-mono text-sm text-[color:var(--text)] placeholder:text-gray-400 focus:border-[color:var(--purple)] focus:outline-none"
+        />
+      </div>
 
-          <div>
-            <div className="mb-1 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]">
-              <span>Amount · {settlement.symbol}</span>
-              <button
-                type="button"
-                onClick={() => setAmount(String(maxWithdraw))}
-                className="normal-case text-[color:var(--purple)] hover:underline"
-              >
-                Max {formatUsd(available)}
-              </button>
-            </div>
-            <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm text-[color:var(--text)] placeholder:text-gray-400 focus:border-[color:var(--purple)] focus:outline-none"
-            />
-          </div>
-
-          {error && <p className="text-xs text-red-600">{error}</p>}
-
+      <div>
+        <div className="mb-1 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]">
+          <span>Amount · {settlement.symbol}</span>
           <button
             type="button"
-            onClick={submit}
-            disabled={store.charging}
-            className="w-full rounded-xl bg-[color:var(--purple)] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[color:var(--purple-deep)] disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => setAmount(String(maxWithdraw))}
+            className="normal-case text-[color:var(--purple)] hover:underline"
           >
-            Withdraw
+            Max {formatUsd(available)}
           </button>
-
-          <p className="text-[11px] leading-relaxed text-[color:var(--muted)]">
-            Sent as {settlement.symbol} on {net}. Funds on other chains are
-            converted first (a network fee applies). Non-custodial — these are
-            your funds, going to an address you control.
-          </p>
         </div>
-      )}
+        <input
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00"
+          className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm text-[color:var(--text)] placeholder:text-gray-400 focus:border-[color:var(--purple)] focus:outline-none"
+        />
+      </div>
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
+
+      <button
+        type="button"
+        onClick={submit}
+        disabled={store.charging}
+        className="w-full rounded-xl bg-[color:var(--purple)] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[color:var(--purple-deep)] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        Withdraw
+      </button>
+
+      <p className="text-[11px] leading-relaxed text-[color:var(--muted)]">
+        Sent as {settlement.symbol} on {net}. Funds on other chains are converted
+        first (a network fee applies). Non-custodial — these are your funds, going
+        to an address you control.
+      </p>
     </div>
   );
 }

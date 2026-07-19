@@ -1,19 +1,17 @@
 "use client";
 
 import "./onlycrabs.css";
-import { UniversalSubscriptionProvider } from "@/components/UniversalSubscriptionProvider";
-import { StoreProvider } from "@/components/StoreProvider";
+import { ClickProvider } from "@/components/ClickProvider";
 import { Storefront } from "@/components/Storefront";
 
 export default function Home() {
-  // One wrap configures the whole library (env defaults here; a host app would
-  // pass config={{ merchant, price, chain, ... }}). StoreProvider then shares a
-  // single checkout + auth session across the storefront and the Account modal.
+  // The whole Click account — config, session (auth + unified balance +
+  // checkout + login gate), the Account modal and the payment status card — is
+  // set up by this single wrap. Any other site integrates the same way; see
+  // README "Add Click to any site". The demo passes no config (env defaults).
   return (
-    <UniversalSubscriptionProvider>
-      <StoreProvider>
-        <Storefront />
-      </StoreProvider>
-    </UniversalSubscriptionProvider>
+    <ClickProvider>
+      <Storefront />
+    </ClickProvider>
   );
 }

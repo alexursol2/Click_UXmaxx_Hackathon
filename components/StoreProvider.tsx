@@ -33,7 +33,7 @@ export interface PayStatus {
   message?: string;
 }
 
-interface StoreContextValue extends UseCheckout {
+export interface StoreContextValue extends UseCheckout {
   auth: AuthState;
   /** Called by the login form once Magic OTP succeeds. */
   onLoggedIn: () => void;
@@ -60,6 +60,9 @@ export function useStore(): StoreContextValue {
   return ctx;
 }
 
+/** localStorage flag: were we signed in? Lets refresh restore the UI instantly. */
+const AUTH_FLAG = "click:auth";
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const checkout = useCheckout();
 
@@ -73,11 +76,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const { refreshBalance } = checkout;
 
-  // Resolve the session on mount.
+  // Resolve the session on mount, persisting login across refreshes. The Magic
+  // session itself survives a reload; we also cache a lightweight flag so the
+  // signed-in UI comes back INSTANTLY (no "checking" flash), then reconcile with
+  // the real session in the background. A transient error keeps the optimistic
+  // state rather than kicking the user out.
   useEffect(() => {
+    const optimistic =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem(AUTH_FLAG) === "1";
+    if (optimistic) setAuth("in");
     isLoggedIn()
-      .then((yes) => setAuth(yes ? "in" : "out"))
-      .catch(() => setAuth("out"));
+      .then((yes) => {
+        setAuth(yes ? "in" : "out");
+        if (typeof window !== "undefined") {
+          if (yes) window.localStorage.setItem(AUTH_FLAG, "1");
+          else window.localStorage.removeItem(AUTH_FLAG);
+        }
+      })
+      .catch(() => {
+        if (!optimistic) setAuth("out");
+      });
   }, []);
 
   // While signed in, keep the unified balance fresh (mirrors the dashboard).
@@ -130,6 +149,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const onLoggedIn = useCallback(() => {
     setAuth("in");
+    if (typeof window !== "undefined")
+      window.localStorage.setItem(AUTH_FLAG, "1");
     const pending = pendingRef.current;
     if (pending) {
       pendingRef.current = null;
@@ -143,6 +164,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     await magicLogout();
     pendingRef.current = null;
+    if (typeof window !== "undefined") window.localStorage.removeItem(AUTH_FLAG);
     setAuth("out");
     setAccountOpen(false);
   }, []);

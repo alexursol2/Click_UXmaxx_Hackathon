@@ -12,7 +12,15 @@
  *   } from "click-universal-subscriptions";
  */
 
-// Provider + config injection
+// ── Drop-in integration (the easiest way to add Click to any site) ──────────
+// Wrap once with <ClickProvider>, then place <ClickAccountButton /> and
+// <ClickPayButton amount label />. The login popup + status card come for free.
+// Or read useClickAccount() to build your own UI on top.
+export { ClickProvider, useClickAccount, type ClickAccount } from "./components/ClickProvider";
+export { ClickPayButton } from "./components/ClickPayButton";
+export { ClickAccountButton } from "./components/ClickAccountButton";
+
+// Provider + config injection (low-level; ClickProvider wraps this for you)
 export {
   UniversalSubscriptionProvider,
   useSubscriptionConfig,

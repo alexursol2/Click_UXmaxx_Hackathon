@@ -9,10 +9,8 @@
  * (signed out) or charges silently and shows only a status card (signed in).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "./StoreProvider";
-import { AccountModal } from "./AccountModal";
-import { ChargeProgress } from "./ChargeProgress";
 import { formatUsd } from "@/lib/utils";
 
 interface Product {
@@ -138,7 +136,23 @@ export function Storefront() {
   const count = items.reduce((n, i) => n + i.qty, 0);
   const total = items.reduce((s, i) => s + i.price * i.qty, 0);
 
-  const add = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+  // Transient "added to cart" toast (keyed so the animation replays each time).
+  const [toast, setToast] = useState<{ id: number; msg: string } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = (msg: string) => {
+    setToast({ id: Date.now(), msg });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2000);
+  };
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
+  const add = (id: string) => {
+    setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+    const p = PRODUCTS.find((x) => x.id === id);
+    if (p) showToast(`${p.name} added to cart`);
+  };
   const inc = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
   const dec = (id: string) =>
     setCart((c) => ({ ...c, [id]: Math.max(0, (c[id] ?? 0) - 1) }));
@@ -164,8 +178,7 @@ export function Storefront() {
   const busy = store.charging;
 
   return (
-    <>
-      <div className="oc-root">
+    <div className="oc-root">
         {/* HEADER */}
         <header className="site-header">
           <div className="container header-inner">
@@ -180,7 +193,7 @@ export function Storefront() {
                 Account
               </button>
               <button className="cart-btn" onClick={() => setDrawerOpen(true)}>
-                Cart <span className="cart-count">{count}</span>
+                Cart <span key={count} className="cart-count">{count}</span>
               </button>
             </div>
           </div>
@@ -307,74 +320,16 @@ export function Storefront() {
             </button>
           </div>
         </aside>
-      </div>
 
-      {/* Overlays live OUTSIDE .oc-root so they keep the Click (Quicksand) theme */}
-      <AccountModal />
-      <StatusToast />
-    </>
-  );
-}
-
-/** Live payment status — the only thing shown for a signed-in one-click buy. */
-function StatusToast() {
-  const store = useStore();
-  const { status } = store;
-  if (!status) return null;
-
-  return (
-    <div className="fixed bottom-4 right-4 z-[250] w-[min(92vw,22rem)] rounded-2xl border border-[color:var(--border)] bg-white p-4 shadow-2xl">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-[color:var(--text)]">
-            {status.kind === "charging" && "Paying…"}
-            {status.kind === "success" && "Paid ✓"}
-            {status.kind === "error" && "Payment failed"}
-          </p>
-          <p className="text-xs text-[color:var(--muted)]">
-            {status.label} · {formatUsd(status.amountUsd)}
-          </p>
-        </div>
-        {status.kind !== "charging" && (
-          <button
-            onClick={store.dismissStatus}
-            aria-label="Dismiss"
-            className="text-[color:var(--muted)] transition-colors hover:text-[color:var(--text)]"
-          >
-            ✕
-          </button>
+        {/* ADD-TO-CART TOAST */}
+        {toast && (
+          <div key={toast.id} className="oc-toast" role="status">
+            <span className="oc-toast-crab" aria-hidden>
+              🦀
+            </span>
+            {toast.msg}
+          </div>
         )}
-      </div>
-
-      {status.kind === "charging" && (
-        <>
-          <ChargeProgress stage={store.stage === "idle" ? "sourcing" : store.stage} />
-          {store.crossChain && (
-            <p className="mt-2 text-[11px] text-[color:var(--accent)]/80">
-              Routing funds across chains to the merchant…
-            </p>
-          )}
-        </>
-      )}
-
-      {status.kind === "success" && (
-        <p className="text-xs text-emerald-600">
-          The merchant received {formatUsd(status.amountUsd)} — sourced from your
-          unified cross-chain balance.
-        </p>
-      )}
-
-      {status.kind === "error" && (
-        <div>
-          <p className="mb-2 text-xs text-red-600">{status.message}</p>
-          <button
-            onClick={() => store.pay(status.amountUsd, status.label)}
-            className="rounded-lg border border-[color:var(--border)] px-3 py-1.5 text-xs font-medium text-[color:var(--text)] transition-colors hover:bg-[color:var(--panel)]"
-          >
-            Try again
-          </button>
-        </div>
-      )}
     </div>
   );
 }

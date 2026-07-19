@@ -305,6 +305,55 @@ html { scroll-behavior: smooth; }
   margin-bottom: 16px; text-transform: uppercase;
 }
 
+/* ===== ADD-TO-CART TOAST ===== */
+.oc-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  /* Resting state is VISIBLE, so the toast shows even if animations are
+     disabled/reduced/throttled; the animation only adds entrance/exit motion. */
+  opacity: 1;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--black);
+  color: var(--white);
+  padding: 14px 22px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 14px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+  z-index: 260;
+  animation: oc-toast-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.3),
+    oc-toast-out 0.3s ease 1.7s forwards;
+}
+.oc-toast-crab { font-size: 18px; animation: oc-crab-wiggle 0.5s ease; }
+/* Entrance animates MOTION ONLY (never opacity), so a paused/disabled animation
+   can't pin the toast invisible — the base opacity:1 always wins. */
+@keyframes oc-toast-in {
+  from { transform: translateX(-50%) translateY(24px) scale(0.96); }
+  to { transform: translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes oc-toast-out {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to { opacity: 0; transform: translateX(-50%) translateY(16px); }
+}
+@keyframes oc-crab-wiggle {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-18deg); }
+  75% { transform: rotate(18deg); }
+}
+
+/* Cart badge pop when the count changes (remounted via React key) */
+.cart-count { animation: cart-bump 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.4); }
+@keyframes cart-bump {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.55); background: var(--pay); color: #fff; }
+  100% { transform: scale(1); }
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 900px) {
   .grid { grid-template-columns: 1fr; }

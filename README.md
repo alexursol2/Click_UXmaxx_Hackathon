@@ -26,6 +26,7 @@ This repo is two things at once:
 
 ## Table of contents
 
+- [Add Click to any site](#add-click-to-any-site-drop-in)
 - [The library in 2 steps](#the-library-in-2-steps)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
@@ -37,6 +38,60 @@ This repo is two things at once:
 - [Public API](#public-api)
 - [Deploy](#deploy)
 - [Roadmap](#roadmap)
+
+---
+
+## Add Click to any site (drop-in)
+
+The whole account — email login, unified cross-chain balance, add-funds, pick
+which coin pays, and one-click checkout — is **three imports**. No wallet UI to
+build:
+
+```tsx
+import { ClickProvider, ClickAccountButton, ClickPayButton } from "./index";
+
+export default function App() {
+  return (
+    <ClickProvider config={{ merchant: "0xYourReceivingAddress" }}>
+      <header>
+        <ClickAccountButton />           {/* login · balance · add funds · pay-with */}
+      </header>
+
+      <ClickPayButton amount={9.99} label="Pro plan" />
+    </ClickProvider>
+  );
+}
+```
+
+`<ClickProvider>` mounts the login popup and the payment status card for you, so
+a button anywhere just works:
+
+- **Signed out** → clicking pay opens the email login; after the code, the
+  purchase resumes automatically.
+- **Signed in** → the charge runs silently; progress shows in the status card
+  (Preparing → Paying → Confirming → Paid ✓), cross-chain if the funds are
+  elsewhere.
+
+Prefer your own UI? Read the hook — it's the account, in one object:
+
+```tsx
+import { useClickAccount } from "./index";
+
+const {
+  auth,                 // "checking" | "out" | "in"
+  openAccount, logout,  // open the built-in login/account panel; sign out
+  universalBalance,     // unified cross-chain balance
+  payWith, setPayWith, availableTokens,   // which coin funds the charge
+  pay,                  // pay(amount, label): login-gates + shows status for you
+  checkout,             // checkout(amount): charge directly (throws on failure)
+  charging, stage,      // live progress
+} = useClickAccount();
+
+<button onClick={() => pay(9.99, "Pro plan")}>Buy</button>
+```
+
+(For a fully custom login form instead of `openAccount()`, import
+`loginWithEmail` from `lib/magic`.)
 
 ---
 

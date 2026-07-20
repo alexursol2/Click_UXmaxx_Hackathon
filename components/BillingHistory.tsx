@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { HistoryEntry } from "@/hooks/useUniversalUpgrade";
 import { useSubscriptionConfig } from "./UniversalSubscriptionProvider";
 import { cn, formatUsd } from "@/lib/utils";
-import { getFee } from "@/lib/feeLedger";
+import { getFee, readFees } from "@/lib/feeLedger";
 import { HistoryIcon } from "./icons";
 
 /**
@@ -45,12 +45,13 @@ export function BillingHistory({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, refreshKey]);
 
-  const totalFees = (rows ?? []).reduce((acc, r) => {
-    const isPayment =
-      r.tag.startsWith("transfer") &&
-      r.to?.toLowerCase() === MERCHANT_ADDRESS.toLowerCase();
-    return acc + (isPayment ? (getFee(r.transactionId) ?? 0) : 0);
-  }, 0);
+  // Per-row fees match by transactionId, but Particle's history id doesn't
+  // always equal the id we recorded the fee under — so the robust total is the
+  // sum of ALL fees recorded in this browser (never depends on id matching).
+  const totalFees = Object.values(readFees()).reduce(
+    (acc, v) => acc + (typeof v === "number" && v > 0 ? v : 0),
+    0
+  );
 
   return (
     <>
